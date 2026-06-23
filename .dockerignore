@@ -12,6 +12,7 @@
 /sdk/python/.venv
 /docs
 *.env
+*.log
 *.local
 __pycache__/
 *.pyc

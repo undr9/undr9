@@ -6,6 +6,10 @@
 docker build -t undr9:local .
 ```
 
+The repository also publishes container images to GitHub Container Registry through
+[docker.yml](file:///Users/mdinjemamulirshad/Documents/projects/undr9-memorydb/.github/workflows/docker.yml).
+The published image name is `ghcr.io/undr9/undr9`.
+
 ## Run
 
 ```bash
@@ -25,6 +29,44 @@ export UNDR9_ADMIN_API_KEY=replace-with-admin-key
 export UNDR9_WRITER_API_KEY=replace-with-writer-key
 export UNDR9_READER_API_KEY=replace-with-reader-key
 docker compose up --build
+```
+
+## GHCR Pull
+
+```bash
+docker pull ghcr.io/undr9/undr9:latest
+```
+
+## GHCR Run
+
+```bash
+docker run --rm \
+  -p 8080:8080 \
+  -v undr9_data:/var/lib/undr9/data \
+  -e UNDR9_ADMIN_API_KEY=replace-with-admin-key \
+  -e UNDR9_WRITER_API_KEY=replace-with-writer-key \
+  -e UNDR9_READER_API_KEY=replace-with-reader-key \
+  ghcr.io/undr9/undr9:latest
+```
+
+## Production Compose
+
+```yaml
+services:
+  undr9:
+    image: ghcr.io/undr9/undr9:latest
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      UNDR9_ADMIN_API_KEY: "${UNDR9_ADMIN_API_KEY:?set UNDR9_ADMIN_API_KEY}"
+      UNDR9_WRITER_API_KEY: "${UNDR9_WRITER_API_KEY:?set UNDR9_WRITER_API_KEY}"
+      UNDR9_READER_API_KEY: "${UNDR9_READER_API_KEY:?set UNDR9_READER_API_KEY}"
+    volumes:
+      - undr9_data:/var/lib/undr9/data
+
+volumes:
+  undr9_data:
 ```
 
 ## Runtime Notes
