@@ -12,6 +12,17 @@
 /.trae
 /.dbg
 /tmp-review
+/README.md
+/README_local.md
+/docs/adr
+/docs/architecture
+/docs/audits
+/docs/onboarding
+/docs/clean_developer_uses.html
+/docs/developer-usage.html
+/docs/implementation-roadmap.md
+/docs/repository-structure.md
+/docs/subsystem-specifications.md
 __pycache__/
 *.pyc
 *.pyo
