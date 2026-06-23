@@ -1,0 +1,31 @@
+[package]
+name = "undr9-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+authors.workspace = true
+
+[dependencies]
+axum.workspace = true
+clap.workspace = true
+im.workspace = true
+libc = "0.2"
+serde.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+undr9-api = { path = "../api" }
+undr9-common = { path = "../common" }
+undr9-config = { path = "../config" }
+undr9-core = { path = "../core" }
+undr9-index = { path = "../index" }
+undr9-query = { path = "../query" }
+undr9-replication = { path = "../replication" }
+undr9-observability = { path = "../observability" }
+undr9-storage = { path = "../storage" }
+undr9-wal = { path = "../wal" }

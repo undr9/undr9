@@ -1,0 +1,39 @@
+{
+  "source_root": "/tmp/undr9-drill-oLtkYZ",
+  "source_node_count": 2,
+  "source_edge_count": 1,
+  "source_last_applied_lsn": 0,
+  "latest_restorable_lsn": 1,
+  "backup_elapsed_ms": 2,
+  "restore_elapsed_ms": 1,
+  "pitr_elapsed_ms": 7,
+  "backup_manifest_present": true,
+  "source_integrity": {
+    "manifest_present": true,
+    "node_snapshot_valid": true,
+    "edge_snapshot_valid": true,
+    "wal_replay_valid": true,
+    "node_count": 2,
+    "edge_count": 1,
+    "issues": []
+  },
+  "restored_integrity": {
+    "manifest_present": true,
+    "node_snapshot_valid": true,
+    "edge_snapshot_valid": true,
+    "wal_replay_valid": true,
+    "node_count": 2,
+    "edge_count": 1,
+    "issues": []
+  },
+  "pitr_integrity": {
+    "manifest_present": true,
+    "node_snapshot_valid": true,
+    "edge_snapshot_valid": true,
+    "wal_replay_valid": true,
+    "node_count": 2,
+    "edge_count": 1,
+    "issues": []
+  },
+  "verified": true
+}

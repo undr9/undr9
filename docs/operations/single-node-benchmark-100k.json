@@ -1,0 +1,169 @@
+{
+  "generated_at_ms": 1782220628232,
+  "host_os": "macos",
+  "host_arch": "aarch64",
+  "timing_unit": "microseconds",
+  "iterations": 1,
+  "scales": [
+    {
+      "node_count": 100000,
+      "edge_count": 99999,
+      "peak_rss_bytes": 1005748224,
+      "storage_footprint": {
+        "wal_bytes": 40460493,
+        "snapshot_bytes": 0,
+        "delta_bytes": 0,
+        "index_bytes": 0,
+        "total_bytes": 40460745,
+        "post_compaction_total_bytes": 35158919,
+        "compaction_elapsed_us": 986042,
+        "recovery_elapsed_us": 1278839
+      },
+      "scenarios": [
+        {
+          "name": "storage_upsert",
+          "samples_us": [
+            4051823
+          ],
+          "min_us": 4051823,
+          "p50_us": 4051823,
+          "p95_us": 4051823,
+          "p99_us": 4051823,
+          "max_us": 4051823,
+          "mean_us": 4051823.0,
+          "throughput_ops_per_sec": 0.24680248865757462
+        },
+        {
+          "name": "storage_delete",
+          "samples_us": [
+            4924135
+          ],
+          "min_us": 4924135,
+          "p50_us": 4924135,
+          "p95_us": 4924135,
+          "p99_us": 4924135,
+          "max_us": 4924135,
+          "mean_us": 4924135.0,
+          "throughput_ops_per_sec": 0.20308135337475516
+        },
+        {
+          "name": "wal_recovery",
+          "samples_us": [
+            8702173
+          ],
+          "min_us": 8702173,
+          "p50_us": 8702173,
+          "p95_us": 8702173,
+          "p99_us": 8702173,
+          "max_us": 8702173,
+          "mean_us": 8702173.0,
+          "throughput_ops_per_sec": 0.11491382669592985
+        },
+        {
+          "name": "exact_lookup",
+          "samples_us": [
+            192
+          ],
+          "min_us": 192,
+          "p50_us": 192,
+          "p95_us": 192,
+          "p99_us": 192,
+          "max_us": 192,
+          "mean_us": 192.0,
+          "throughput_ops_per_sec": 5208.333333333333
+        },
+        {
+          "name": "list_neighbors_1_hop",
+          "samples_us": [
+            93
+          ],
+          "min_us": 93,
+          "p50_us": 93,
+          "p95_us": 93,
+          "p99_us": 93,
+          "max_us": 93,
+          "mean_us": 93.0,
+          "throughput_ops_per_sec": 10752.68817204301
+        },
+        {
+          "name": "label_scan",
+          "samples_us": [
+            21357
+          ],
+          "min_us": 21357,
+          "p50_us": 21357,
+          "p95_us": 21357,
+          "p99_us": 21357,
+          "max_us": 21357,
+          "mean_us": 21357.0,
+          "throughput_ops_per_sec": 46.823055672613194
+        },
+        {
+          "name": "traverse_5_hops",
+          "samples_us": [
+            270
+          ],
+          "min_us": 270,
+          "p50_us": 270,
+          "p95_us": 270,
+          "p99_us": 270,
+          "max_us": 270,
+          "mean_us": 270.0,
+          "throughput_ops_per_sec": 3703.703703703704
+        },
+        {
+          "name": "shortest_path",
+          "samples_us": [
+            687
+          ],
+          "min_us": 687,
+          "p50_us": 687,
+          "p95_us": 687,
+          "p99_us": 687,
+          "max_us": 687,
+          "mean_us": 687.0,
+          "throughput_ops_per_sec": 1455.604075691412
+        },
+        {
+          "name": "temporal_range",
+          "samples_us": [
+            4195
+          ],
+          "min_us": 4195,
+          "p50_us": 4195,
+          "p95_us": 4195,
+          "p99_us": 4195,
+          "max_us": 4195,
+          "mean_us": 4195.0,
+          "throughput_ops_per_sec": 238.37902264600714
+        },
+        {
+          "name": "vector_search",
+          "samples_us": [
+            456501
+          ],
+          "min_us": 456501,
+          "p50_us": 456501,
+          "p95_us": 456501,
+          "p99_us": 456501,
+          "max_us": 456501,
+          "mean_us": 456501.0,
+          "throughput_ops_per_sec": 2.1905757052010837
+        },
+        {
+          "name": "ranked_retrieval",
+          "samples_us": [
+            307772
+          ],
+          "min_us": 307772,
+          "p50_us": 307772,
+          "p95_us": 307772,
+          "p99_us": 307772,
+          "max_us": 307772,
+          "mean_us": 307772.0,
+          "throughput_ops_per_sec": 3.249158467956799
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+[package]
+name = "undr9-storage"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+authors.workspace = true
+
+[dependencies]
+postcard.workspace = true
+rkyv.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true
+undr9-memory = { path = "../memory" }
+undr9-common = { path = "../common" }
+undr9-config = { path = "../config" }
+undr9-core = { path = "../core" }
+undr9-wal = { path = "../wal" }

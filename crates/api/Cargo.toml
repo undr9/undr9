@@ -1,0 +1,35 @@
+[package]
+name = "undr9-api"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+authors.workspace = true
+
+[dependencies]
+axum.workspace = true
+bytes = "1"
+dashmap.workspace = true
+futures-util = "0.3"
+http.workspace = true
+im.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+undr9-auth = { path = "../auth" }
+undr9-cluster = { path = "../cluster" }
+undr9-common = { path = "../common" }
+undr9-config = { path = "../config" }
+undr9-core = { path = "../core" }
+undr9-index = { path = "../index" }
+undr9-observability = { path = "../observability" }
+undr9-query = { path = "../query" }
+undr9-replication = { path = "../replication" }
+undr9-storage = { path = "../storage" }
+
+[dev-dependencies]
+tower.workspace = true

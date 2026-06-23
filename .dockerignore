@@ -1,0 +1,17 @@
+/target
+/.git
+/.idea
+/.DS_Store
+/.venv
+/venv
+/data
+/tmp-review
+/.dbg
+/node_modules
+/UI/node_modules
+/sdk/python/.venv
+/docs
+*.env
+*.local
+__pycache__/
+*.pyc

@@ -1,0 +1,67 @@
+{
+  "generated_at_ms": 1782226725120,
+  "host_os": "macos",
+  "host_arch": "aarch64",
+  "timing_unit": "microseconds",
+  "iterations": 1,
+  "scenario_profile": "storage-only",
+  "workload_profile": "compact",
+  "scales": [
+    {
+      "node_count": 10000000,
+      "edge_count": 9999999,
+      "peak_rss_bytes": 7545044992,
+      "storage_footprint": {
+        "wal_bytes": 2845381794,
+        "snapshot_bytes": 0,
+        "delta_bytes": 0,
+        "index_bytes": 0,
+        "total_bytes": 2845382046,
+        "post_compaction_total_bytes": 2495472719,
+        "compaction_elapsed_us": 95610212,
+        "recovery_elapsed_us": 104320707
+      },
+      "scenarios": [
+        {
+          "name": "storage_upsert",
+          "samples_us": [
+            363418814
+          ],
+          "min_us": 363418814,
+          "p50_us": 363418814,
+          "p95_us": 363418814,
+          "p99_us": 363418814,
+          "max_us": 363418814,
+          "mean_us": 363418814.0,
+          "throughput_ops_per_sec": 0.0027516462039854656
+        },
+        {
+          "name": "storage_delete",
+          "samples_us": [
+            513378895
+          ],
+          "min_us": 513378895,
+          "p50_us": 513378895,
+          "p95_us": 513378895,
+          "p99_us": 513378895,
+          "max_us": 513378895,
+          "mean_us": 513378895.0,
+          "throughput_ops_per_sec": 0.0019478790611367068
+        },
+        {
+          "name": "wal_recovery",
+          "samples_us": [
+            730444377
+          ],
+          "min_us": 730444377,
+          "p50_us": 730444377,
+          "p95_us": 730444377,
+          "p99_us": 730444377,
+          "max_us": 730444377,
+          "mean_us": 730444377.0,
+          "throughput_ops_per_sec": 0.0013690296365988727
+        }
+      ]
+    }
+  ]
+}
