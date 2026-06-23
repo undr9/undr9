@@ -6,12 +6,14 @@ RUN cargo build --release -p undr9-cli
 
 FROM debian:bookworm-slim
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl tini \
+    && apt-get install -y --no-install-recommends ca-certificates curl gosu tini \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --system --create-home --home-dir /var/lib/undr9 undr9
 WORKDIR /var/lib/undr9
 
 COPY --from=builder /app/target/release/undr9-cli /usr/local/bin/undr9
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 ENV UNDR9_ROOT=/var/lib/undr9/data
 LABEL org.opencontainers.image.title="undr9" \
@@ -23,6 +25,5 @@ STOPSIGNAL SIGTERM
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD curl --fail --silent http://127.0.0.1:8080/readyz >/dev/null || exit 1
 
-USER undr9
 ENTRYPOINT ["/usr/bin/tini", "--"]
-CMD ["undr9", "serve", "--root", "/var/lib/undr9/data", "--bind", "0.0.0.0:8080"]
+CMD ["/usr/local/bin/docker-entrypoint.sh", "undr9", "serve", "--root", "/var/lib/undr9/data", "--bind", "0.0.0.0:8080"]
