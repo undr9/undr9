@@ -27,7 +27,10 @@ struct Args {
     scales: String,
     #[arg(long, default_value_t = 5)]
     iterations: usize,
-    #[arg(long, default_value = "docs/operations/single-node-benchmark-baseline.json")]
+    #[arg(
+        long,
+        default_value = "docs/operations/single-node-benchmark-baseline.json"
+    )]
     output: PathBuf,
     #[arg(long, default_value = "full")]
     scenario_profile: String,
@@ -98,9 +101,7 @@ fn main() -> BenchResult<()> {
     }
 
     let report = BenchmarkReport {
-        generated_at_ms: SystemTime::now()
-            .duration_since(UNIX_EPOCH)?
-            .as_millis(),
+        generated_at_ms: SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis(),
         host_os: std::env::consts::OS,
         host_arch: std::env::consts::ARCH,
         timing_unit: "microseconds",
@@ -193,7 +194,9 @@ fn run_scale(
         scenarios.push(measure("list_neighbors_1_hop", iterations, || {
             bench_list_neighbors(snapshot, &workload)
         })?);
-        scenarios.push(measure("label_scan", iterations, || bench_label_scan(snapshot))?);
+        scenarios.push(measure("label_scan", iterations, || {
+            bench_label_scan(snapshot)
+        })?);
         scenarios.push(measure("traverse_5_hops", iterations, || {
             bench_traverse(snapshot, &workload)
         })?);
@@ -370,7 +373,9 @@ fn bench_wal_recovery(workload: &Workload) -> BenchResult<()> {
     }
 
     let reopened = StorageEngine::open(&config)?;
-    if reopened.node_count() != workload.nodes.len() || reopened.edge_count() != workload.edges.len() {
+    if reopened.node_count() != workload.nodes.len()
+        || reopened.edge_count() != workload.edges.len()
+    {
         return Err("wal_recovery benchmark reopened with incorrect counts".into());
     }
     Ok(())
@@ -547,7 +552,9 @@ fn measure_storage_footprint(workload: &Workload) -> BenchResult<StorageFootprin
     let recovery_started = Instant::now();
     let reopened = StorageEngine::open(&config)?;
     let recovery_elapsed_us = recovery_started.elapsed().as_micros();
-    if reopened.node_count() != workload.nodes.len() || reopened.edge_count() != workload.edges.len() {
+    if reopened.node_count() != workload.nodes.len()
+        || reopened.edge_count() != workload.edges.len()
+    {
         return Err("storage footprint recovery check reopened with incorrect counts".into());
     }
 
@@ -809,20 +816,21 @@ fn edges_for_range(range: std::ops::Range<usize>) -> BenchResult<Vec<EdgeRecord>
 }
 
 fn node_ids_for_range(range: std::ops::Range<usize>) -> BenchResult<Vec<NodeId>> {
-    range.map(|index| NodeId::new(format!("node_{index}")).map_err(Into::into)).collect()
+    range
+        .map(|index| NodeId::new(format!("node_{index}")).map_err(Into::into))
+        .collect()
 }
 
 fn edge_ids_for_range(range: std::ops::Range<usize>) -> BenchResult<Vec<EdgeId>> {
-    range.map(|index| EdgeId::new(format!("edge_{index}")).map_err(Into::into)).collect()
+    range
+        .map(|index| EdgeId::new(format!("edge_{index}")).map_err(Into::into))
+        .collect()
 }
 
 fn benchmark_storage_config(root_dir: PathBuf) -> AppConfig {
     let mut config = AppConfig::default();
     config.storage.root_dir = root_dir;
-    config.wal.max_replay_bytes = config
-        .wal
-        .max_replay_bytes
-        .max(BENCHMARK_WAL_REPLAY_BYTES);
+    config.wal.max_replay_bytes = config.wal.max_replay_bytes.max(BENCHMARK_WAL_REPLAY_BYTES);
     config
 }
 

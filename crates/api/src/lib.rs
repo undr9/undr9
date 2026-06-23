@@ -15,8 +15,8 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use futures_util::stream;
 use dashmap::DashMap;
+use futures_util::stream;
 use im::OrdMap;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use tokio::sync::RwLock;
@@ -37,8 +37,8 @@ use undr9_observability::{
     StructuredLogEvent,
 };
 use undr9_query::{
-    Executor, GraphMutation, GraphPath, GraphSnapshot, OverlayGraphView, PlanKind,
-    QueryExecution, QueryExecutionItem, QueryRequest, QueryResponse, RankedNodeResult,
+    Executor, GraphMutation, GraphPath, GraphSnapshot, OverlayGraphView, PlanKind, QueryExecution,
+    QueryExecutionItem, QueryRequest, QueryResponse, RankedNodeResult,
 };
 use undr9_replication::{
     ReplicationManager, ReplicationMode, ReplicationRecord, ReplicationStatus,
@@ -922,7 +922,8 @@ impl Database {
 
         if !deleted_node_ids.is_empty() {
             for edge in self.engine.all_edges() {
-                if deleted_node_ids.contains(&edge.source) || deleted_node_ids.contains(&edge.target)
+                if deleted_node_ids.contains(&edge.source)
+                    || deleted_node_ids.contains(&edge.target)
                 {
                     mutation.removed_edges.insert(edge.id.clone(), edge.clone());
                     mutation.added_edges.remove(&edge.id);
@@ -1110,7 +1111,10 @@ impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         (
             self.status,
-            [(header::HeaderName::from_static("x-undr9-error-code"), self.body.code)],
+            [(
+                header::HeaderName::from_static("x-undr9-error-code"),
+                self.body.code,
+            )],
             Json(self.body),
         )
             .into_response()
@@ -1238,7 +1242,10 @@ pub fn build_router(state: ApiState) -> Router {
         .route("/v1/admin/restore", post(restore_handler))
         .route("/v1/admin/repair", post(repair_handler))
         .route("/v1/admin/rebuild-indexes", post(rebuild_indexes_handler))
-        .route("/v1/admin/maintenance/status", get(maintenance_status_handler))
+        .route(
+            "/v1/admin/maintenance/status",
+            get(maintenance_status_handler),
+        )
         .route("/v1/admin/integrity", get(integrity_handler))
         .route("/v1/admin/audit", get(audit_export_handler))
         .route(
@@ -1321,9 +1328,10 @@ async fn request_metrics_middleware(
         tracing::info!("request started");
         let mut response = next.run(request).await;
         if let Ok(header_value) = HeaderValue::from_str(&trace_id) {
-            response
-                .headers_mut()
-                .insert(header::HeaderName::from_static(TRACE_ID_HEADER), header_value);
+            response.headers_mut().insert(
+                header::HeaderName::from_static(TRACE_ID_HEADER),
+                header_value,
+            );
         }
         if let Some(error_code) = response
             .headers()
@@ -1350,7 +1358,13 @@ async fn request_metrics_middleware(
                 "request completed"
             );
         }
-        record_endpoint_metrics(&state, &method, &route, response.status(), started.elapsed());
+        record_endpoint_metrics(
+            &state,
+            &method,
+            &route,
+            response.status(),
+            started.elapsed(),
+        );
         response
     }
     .instrument(span)
@@ -1373,7 +1387,11 @@ async fn readiness_handler(State(state): State<ApiState>) -> Response {
 
     let payload = Json(HealthResponse {
         service: state.service_name.to_string(),
-        status: if state.is_ready() { "ready" } else { "draining" },
+        status: if state.is_ready() {
+            "ready"
+        } else {
+            "draining"
+        },
     });
 
     (status, payload).into_response()
@@ -1424,7 +1442,9 @@ async fn create_node_handler(
         database.upsert_node(node).map_err(ApiError::from_error)?
     };
     increment_counter(&state, |counters| {
-        counters.write_requests_total.fetch_add(1, Ordering::Relaxed);
+        counters
+            .write_requests_total
+            .fetch_add(1, Ordering::Relaxed);
     });
     record_audit(
         &state,
@@ -1464,7 +1484,9 @@ async fn update_node_handler(
         database.upsert_node(node).map_err(ApiError::from_error)?
     };
     increment_counter(&state, |counters| {
-        counters.write_requests_total.fetch_add(1, Ordering::Relaxed);
+        counters
+            .write_requests_total
+            .fetch_add(1, Ordering::Relaxed);
     });
     record_audit(
         &state,
@@ -1518,7 +1540,9 @@ async fn delete_node_handler(
             })?;
     }
     increment_counter(&state, |counters| {
-        counters.write_requests_total.fetch_add(1, Ordering::Relaxed);
+        counters
+            .write_requests_total
+            .fetch_add(1, Ordering::Relaxed);
     });
     record_audit(
         &state,
@@ -1544,7 +1568,9 @@ async fn create_edge_handler(
         database.upsert_edge(edge).map_err(ApiError::from_error)?
     };
     increment_counter(&state, |counters| {
-        counters.write_requests_total.fetch_add(1, Ordering::Relaxed);
+        counters
+            .write_requests_total
+            .fetch_add(1, Ordering::Relaxed);
     });
     record_audit(
         &state,
@@ -1580,7 +1606,9 @@ async fn update_edge_handler(
         database.upsert_edge(edge).map_err(ApiError::from_error)?
     };
     increment_counter(&state, |counters| {
-        counters.write_requests_total.fetch_add(1, Ordering::Relaxed);
+        counters
+            .write_requests_total
+            .fetch_add(1, Ordering::Relaxed);
     });
     record_audit(
         &state,
@@ -1634,7 +1662,9 @@ async fn delete_edge_handler(
             })?;
     }
     increment_counter(&state, |counters| {
-        counters.write_requests_total.fetch_add(1, Ordering::Relaxed);
+        counters
+            .write_requests_total
+            .fetch_add(1, Ordering::Relaxed);
     });
     record_audit(
         &state,
@@ -1728,7 +1758,9 @@ async fn begin_transaction_handler(
             .map_err(ApiError::from_error)?
     };
     increment_counter(&state, |counters| {
-        counters.write_requests_total.fetch_add(1, Ordering::Relaxed);
+        counters
+            .write_requests_total
+            .fetch_add(1, Ordering::Relaxed);
         record_latency(
             &counters.transaction_latency,
             started.elapsed().as_millis() as u64,
@@ -1785,7 +1817,9 @@ async fn stage_transaction_operation_handler(
             .map_err(ApiError::from_error)?
     };
     increment_counter(&state, |counters| {
-        counters.write_requests_total.fetch_add(1, Ordering::Relaxed);
+        counters
+            .write_requests_total
+            .fetch_add(1, Ordering::Relaxed);
     });
     record_audit(
         &state,
@@ -1867,7 +1901,9 @@ async fn commit_transaction_handler(
             .map_err(ApiError::from_error)?
     };
     increment_counter(&state, |counters| {
-        counters.write_requests_total.fetch_add(1, Ordering::Relaxed);
+        counters
+            .write_requests_total
+            .fetch_add(1, Ordering::Relaxed);
         record_latency(
             &counters.transaction_latency,
             started.elapsed().as_millis() as u64,
@@ -1901,7 +1937,9 @@ async fn rollback_transaction_handler(
             .map_err(ApiError::from_error)?
     };
     increment_counter(&state, |counters| {
-        counters.write_requests_total.fetch_add(1, Ordering::Relaxed);
+        counters
+            .write_requests_total
+            .fetch_add(1, Ordering::Relaxed);
         record_latency(
             &counters.transaction_latency,
             started.elapsed().as_millis() as u64,
@@ -2078,7 +2116,8 @@ async fn restore_handler(
         .await;
     {
         let mut database = lock_database_mut(&state).await;
-        if let Err(error) = database.restore_from(&state.config, &request.source, request.target_lsn)
+        if let Err(error) =
+            database.restore_from(&state.config, &request.source, request.target_lsn)
         {
             state
                 .mark_maintenance_finished(
@@ -2352,7 +2391,9 @@ async fn configure_leader_handler(
     let principal = authorize(&headers, &state, Action::Maintain)?;
     let response = {
         let mut database = lock_database_mut(&state).await;
-        database.configure_as_leader().map_err(ApiError::from_error)?
+        database
+            .configure_as_leader()
+            .map_err(ApiError::from_error)?
     };
     record_audit(
         &state,
@@ -2628,11 +2669,7 @@ fn record_latency(histogram: &AtomicLatencyHistogram, elapsed_ms: u64) {
 
 fn record_api_error_metric(state: &ApiState, status: StatusCode, code: &str) {
     let key = format!("{code}|{}", status.as_u16());
-    let entry = state
-        .counters
-        .error_counters
-        .entry(key)
-        .or_insert_with(AtomicU64::default);
+    let entry = state.counters.error_counters.entry(key).or_default();
     entry.fetch_add(1, Ordering::Relaxed);
 }
 
@@ -2653,7 +2690,11 @@ fn parse_traceparent_trace_id(traceparent: &str) -> Option<String> {
     if segments.next().is_some() {
         return None;
     }
-    if trace_id.len() == 32 && trace_id.chars().all(|character| character.is_ascii_hexdigit()) {
+    if trace_id.len() == 32
+        && trace_id
+            .chars()
+            .all(|character| character.is_ascii_hexdigit())
+    {
         Some(trace_id.to_ascii_lowercase())
     } else {
         None
@@ -2770,7 +2811,9 @@ fn record_query_metrics(
     elapsed_ms: u64,
 ) -> std::result::Result<(), ApiError> {
     increment_counter(state, |counters| {
-        counters.query_requests_total.fetch_add(1, Ordering::Relaxed);
+        counters
+            .query_requests_total
+            .fetch_add(1, Ordering::Relaxed);
         record_latency(&counters.query_latency, elapsed_ms);
         match request {
             QueryRequest::Traverse { .. } | QueryRequest::ShortestPath { .. } => {
@@ -2819,7 +2862,9 @@ fn record_query_stream_metrics(
     elapsed_ms: u64,
 ) -> std::result::Result<(), ApiError> {
     increment_counter(state, |counters| {
-        counters.query_requests_total.fetch_add(1, Ordering::Relaxed);
+        counters
+            .query_requests_total
+            .fetch_add(1, Ordering::Relaxed);
         record_latency(&counters.query_latency, elapsed_ms);
         match request {
             QueryRequest::Traverse { .. } | QueryRequest::ShortestPath { .. } => {
@@ -2865,9 +2910,11 @@ fn render_query_stream(
     execution: QueryExecution<'_>,
 ) -> std::result::Result<(Response, StreamRenderSummary), ApiError> {
     let (lines, summary) = serialize_query_execution_stream(execution)?;
-    let body = Body::from_stream(stream::iter(lines.into_iter().map(|line| {
-        Ok::<Bytes, Infallible>(Bytes::from(line))
-    })));
+    let body = Body::from_stream(stream::iter(
+        lines
+            .into_iter()
+            .map(|line| Ok::<Bytes, Infallible>(Bytes::from(line))),
+    ));
     Ok((
         (
             StatusCode::OK,
@@ -2882,7 +2929,7 @@ fn render_query_stream(
 fn serialize_query_execution_stream(
     execution: QueryExecution<'_>,
 ) -> std::result::Result<(Vec<String>, StreamRenderSummary), ApiError> {
-    let plan_kind = execution.plan_kind.clone();
+    let plan_kind = execution.plan_kind;
     let retrieval_profile = execution.retrieval_profile.clone();
     let mut lines = Vec::new();
     let mut summary = StreamRenderSummary::default();
@@ -2984,13 +3031,12 @@ fn record_endpoint_metrics(
     elapsed: Duration,
 ) {
     let key = format!("{method} {route}");
-    let entry = state
-        .endpoint_metrics
-        .entry(key)
-        .or_default();
+    let entry = state.endpoint_metrics.entry(key).or_default();
     let elapsed_ms = elapsed.as_millis() as u64;
     entry.requests_total.fetch_add(1, Ordering::Relaxed);
-    entry.latency_ms_total.fetch_add(elapsed_ms, Ordering::Relaxed);
+    entry
+        .latency_ms_total
+        .fetch_add(elapsed_ms, Ordering::Relaxed);
     match status.as_u16() {
         200..=299 => {
             entry.responses_2xx_total.fetch_add(1, Ordering::Relaxed);
@@ -3333,7 +3379,8 @@ mod tests {
         }
         let app = super::build_router(state);
 
-        let response = app.clone()
+        let response = app
+            .clone()
             .oneshot(
                 Request::builder()
                     .method("POST")
@@ -3354,7 +3401,8 @@ mod tests {
 
         assert_eq!(response.status(), StatusCode::OK);
 
-        let response = app.clone()
+        let response = app
+            .clone()
             .oneshot(
                 Request::builder()
                     .method("POST")
@@ -3465,7 +3513,9 @@ mod tests {
         let payload = String::from_utf8(body.to_vec()).expect("body should be UTF-8");
         let frames = payload
             .lines()
-            .map(|line| serde_json::from_str::<serde_json::Value>(line).expect("frame should parse"))
+            .map(|line| {
+                serde_json::from_str::<serde_json::Value>(line).expect("frame should parse")
+            })
             .collect::<Vec<_>>();
 
         assert_eq!(frames[0]["type"], "meta");
@@ -3977,12 +4027,13 @@ mod tests {
         let admin_key = state.config.auth.admin_api_key.clone();
         let app = super::build_router(state);
 
-        let original = NodeRecord::new(NodeId::new("node_lookup").expect("valid node id"), "memory")
-            .expect("node should build")
-            .with_property("unique_key", PropertyValue::String("goal-alpha".to_owned()))
-            .expect("property should build")
-            .with_property("value", PropertyValue::Integer(1))
-            .expect("property should build");
+        let original =
+            NodeRecord::new(NodeId::new("node_lookup").expect("valid node id"), "memory")
+                .expect("node should build")
+                .with_property("unique_key", PropertyValue::String("goal-alpha".to_owned()))
+                .expect("property should build")
+                .with_property("value", PropertyValue::Integer(1))
+                .expect("property should build");
         let create_response = app
             .clone()
             .oneshot(
@@ -4140,7 +4191,10 @@ mod tests {
 
         let staged = NodeRecord::new(NodeId::new("node_staged").expect("valid node id"), "memory")
             .expect("node should build")
-            .with_property("unique_key", PropertyValue::String("goal-staged".to_owned()))
+            .with_property(
+                "unique_key",
+                PropertyValue::String("goal-staged".to_owned()),
+            )
             .expect("property should build");
         let stage_response = app
             .clone()
@@ -4219,9 +4273,7 @@ mod tests {
     #[test]
     fn published_snapshot_is_immutable_after_commit() {
         let state = test_state();
-        let mut database = state
-            .database
-            .blocking_write();
+        let mut database = state.database.blocking_write();
 
         let initial = NodeRecord::new(NodeId::new("node_a").expect("valid node id"), "memory")
             .expect("node should build")
@@ -4359,7 +4411,9 @@ mod tests {
         assert_eq!(backup_response.status(), StatusCode::OK);
         assert!(storage_root.exists());
         assert!(backup_root.exists());
-        assert!(backup_root.join(undr9_storage::BACKUP_MANIFEST_FILE_NAME).exists());
+        assert!(backup_root
+            .join(undr9_storage::BACKUP_MANIFEST_FILE_NAME)
+            .exists());
 
         let create_newer_node = app
             .clone()

@@ -180,13 +180,17 @@ fn snapshot_reads_handle_delete_and_recreate_of_same_node_id() {
         .upsert_node(original)
         .expect("initial node should insert");
 
-    let tx_before_delete = engine.begin_transaction(IsolationLevel::Snapshot).transaction_id;
+    let tx_before_delete = engine
+        .begin_transaction(IsolationLevel::Snapshot)
+        .transaction_id;
 
     engine
         .delete_node(&NodeId::new("node_a").expect("valid node id"))
         .expect("delete should succeed");
 
-    let tx_after_delete = engine.begin_transaction(IsolationLevel::Snapshot).transaction_id;
+    let tx_after_delete = engine
+        .begin_transaction(IsolationLevel::Snapshot)
+        .transaction_id;
 
     let recreated = NodeRecord::new(NodeId::new("node_a").expect("valid node id"), "memory")
         .expect("node should build")
@@ -197,7 +201,10 @@ fn snapshot_reads_handle_delete_and_recreate_of_same_node_id() {
         .expect("recreated node should insert");
 
     let before_delete_value = engine
-        .transaction_node(&tx_before_delete, &NodeId::new("node_a").expect("valid node id"))
+        .transaction_node(
+            &tx_before_delete,
+            &NodeId::new("node_a").expect("valid node id"),
+        )
         .expect("snapshot read should work")
         .expect("node should exist before delete")
         .property("value")
@@ -205,7 +212,10 @@ fn snapshot_reads_handle_delete_and_recreate_of_same_node_id() {
     assert_eq!(before_delete_value, Some(1));
 
     let after_delete_value = engine
-        .transaction_node(&tx_after_delete, &NodeId::new("node_a").expect("valid node id"))
+        .transaction_node(
+            &tx_after_delete,
+            &NodeId::new("node_a").expect("valid node id"),
+        )
         .expect("snapshot read should work");
     assert!(after_delete_value.is_none());
 }

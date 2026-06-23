@@ -482,8 +482,8 @@ mod tests {
             .expect("segment should open");
         file.write_all(&frame).expect("frame should write");
 
-        let error =
-            super::replay_from_dir(tempdir.path(), u64::MAX).expect_err("checksum mismatch must fail");
+        let error = super::replay_from_dir(tempdir.path(), u64::MAX)
+            .expect_err("checksum mismatch must fail");
         assert!(error.to_string().contains("checksum mismatch"));
     }
 }

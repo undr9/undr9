@@ -8,12 +8,10 @@ use undr9_config::AppConfig;
 use undr9_core::{EdgeRecord, NodeRecord, PropertyValue, WriteBatch};
 use undr9_storage::{
     backup_directory, bootstrap, clear_storage_io_failpoint, install_storage_io_failpoint,
-    load_manifest, persist_manifest, repair_storage, restore_directory,
-    restore_directory_to_lsn, StorageEngine, BACKUP_MANIFEST_FILE_NAME,
+    load_manifest, persist_manifest, repair_storage, restore_directory, restore_directory_to_lsn,
+    StorageEngine, BACKUP_MANIFEST_FILE_NAME,
 };
-use undr9_wal::{
-    clear_wal_io_failpoint, install_wal_io_failpoint, Wal, WalRecordKind,
-};
+use undr9_wal::{clear_wal_io_failpoint, install_wal_io_failpoint, Wal, WalRecordKind};
 
 static FAILPOINT_TEST_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
@@ -249,9 +247,7 @@ fn corrupted_wal_is_reported_and_rejected_on_restart() {
     file.write_all(&[0x7f])
         .expect("corruption byte should write");
 
-    let integrity = StorageEngine::open(&config)
-        .err()
-        .expect("corrupted WAL should fail reopen");
+    let integrity = StorageEngine::open(&config).expect_err("corrupted WAL should fail reopen");
     assert!(
         integrity.to_string().contains("corruption")
             || integrity.to_string().contains("checksum")
@@ -299,9 +295,8 @@ fn repair_recovers_from_corrupted_delta_segment_using_wal() {
         .expect("recovery should have published a delta segment");
     fs::write(&delta_path, b"{not-valid-json").expect("delta corruption should be written");
 
-    let open_error = StorageEngine::open(&config)
-        .err()
-        .expect("corrupted delta should fail normal open");
+    let open_error =
+        StorageEngine::open(&config).expect_err("corrupted delta should fail normal open");
     assert!(!open_error.to_string().trim().is_empty());
 
     let report = repair_storage(&config).expect("repair should rebuild from wal despite bad delta");
@@ -331,9 +326,8 @@ fn repair_recovers_from_malformed_manifest_using_wal() {
     let (layout, _) = bootstrap(&config.storage).expect("storage should bootstrap");
     fs::write(layout.manifest_path(), b"{invalid-json").expect("manifest corruption should write");
 
-    let open_error = StorageEngine::open(&config)
-        .err()
-        .expect("malformed manifest should fail normal open");
+    let open_error =
+        StorageEngine::open(&config).expect_err("malformed manifest should fail normal open");
     assert!(open_error.to_string().contains("manifest"));
 
     let report = repair_storage(&config).expect("repair should recover from malformed manifest");
@@ -392,9 +386,8 @@ fn repair_recovers_when_manifest_metadata_is_wrong_but_delta_is_valid() {
         .checksum_crc32 ^= 1;
     persist_manifest(&layout.manifest_path(), &manifest).expect("manifest should rewrite");
 
-    let open_error = StorageEngine::open(&config)
-        .err()
-        .expect("broken manifest metadata should fail normal open");
+    let open_error =
+        StorageEngine::open(&config).expect_err("broken manifest metadata should fail normal open");
     assert!(
         open_error.to_string().contains("checksum")
             || open_error.to_string().contains("snapshot")
@@ -716,13 +709,8 @@ fn restore_to_lsn_recovers_retained_wal_prefix() {
         .expect("backup should succeed before PITR restore");
 
     let restore_dir = tempdir.path().join("restore");
-    restore_directory_to_lsn(
-        &backup_dir,
-        &restore_dir,
-        node_a_lsn.0,
-        &source_config.wal,
-    )
-    .expect("restore to retained lsn should succeed");
+    restore_directory_to_lsn(&backup_dir, &restore_dir, node_a_lsn.0, &source_config.wal)
+        .expect("restore to retained lsn should succeed");
 
     let mut restored_config = AppConfig::default();
     restored_config.storage.root_dir = restore_dir;

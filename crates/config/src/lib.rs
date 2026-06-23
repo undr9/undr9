@@ -432,7 +432,9 @@ mod tests {
         let mut config = AppConfig::default();
         config.auth.admin_api_key = "undr9-dev-admin-key".to_owned();
 
-        let error = config.validate().expect_err("legacy dev key should fail validation");
+        let error = config
+            .validate()
+            .expect_err("legacy dev key should fail validation");
         assert!(error.to_string().contains("legacy development API keys"));
     }
 
@@ -445,7 +447,10 @@ mod tests {
         std::env::set_var("UNDR9_OTLP_ENABLED", "true");
         std::env::set_var("UNDR9_OTLP_PROTOCOL", "http/protobuf");
         std::env::set_var("UNDR9_OTLP_ENDPOINT", "http://127.0.0.1:4318/v1/traces");
-        std::env::set_var("UNDR9_OTLP_HEADERS", "authorization=Bearer token,x-scope-orgid=tenant");
+        std::env::set_var(
+            "UNDR9_OTLP_HEADERS",
+            "authorization=Bearer token,x-scope-orgid=tenant",
+        );
         std::env::set_var("UNDR9_OTLP_TIMEOUT_MS", "2500");
 
         config.apply_env_overrides();
@@ -482,14 +487,18 @@ mod tests {
         config.auth.writer_api_key = "short".to_owned();
         config.auth.reader_api_key = "distinct-reader-key".to_owned();
 
-        let error = config.validate().expect_err("weak auth keys should fail validation");
+        let error = config
+            .validate()
+            .expect_err("weak auth keys should fail validation");
         assert!(error.to_string().contains("at least"));
 
         config.auth.admin_api_key = "distinct-admin-key".to_owned();
         config.auth.writer_api_key = "distinct-admin-key".to_owned();
         config.auth.reader_api_key = "distinct-reader-key".to_owned();
 
-        let error = config.validate().expect_err("duplicate auth keys should fail validation");
+        let error = config
+            .validate()
+            .expect_err("duplicate auth keys should fail validation");
         assert!(error.to_string().contains("must be distinct"));
     }
 

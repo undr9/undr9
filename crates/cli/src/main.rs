@@ -624,9 +624,9 @@ fn run_recovery_drill(root: &str) -> Result<RecoveryDrillReport, String> {
     .last()
     .map(|record| record.header.lsn.0)
     .unwrap_or(source_last_applied_lsn);
-    let mut source_integrity = source_engine
-        .verify_integrity()
-        .map_err(|error| format!("failed to verify source integrity for recovery drill: {error}"))?;
+    let mut source_integrity = source_engine.verify_integrity().map_err(|error| {
+        format!("failed to verify source integrity for recovery drill: {error}")
+    })?;
     source_integrity.node_count = source_node_count;
     source_integrity.edge_count = source_edge_count;
 
@@ -650,9 +650,9 @@ fn run_recovery_drill(root: &str) -> Result<RecoveryDrillReport, String> {
     restored_config.storage.root_dir = restore_dir.clone();
     let restored_engine = StorageEngine::open(&restored_config)
         .map_err(|error| format!("failed to open restored storage for recovery drill: {error}"))?;
-    let mut restored_integrity = restored_engine
-        .verify_integrity()
-        .map_err(|error| format!("failed to verify restored integrity for recovery drill: {error}"))?;
+    let mut restored_integrity = restored_engine.verify_integrity().map_err(|error| {
+        format!("failed to verify restored integrity for recovery drill: {error}")
+    })?;
     restored_integrity.node_count = restored_engine.node_count();
     restored_integrity.edge_count = restored_engine.edge_count();
 
@@ -690,9 +690,9 @@ fn run_recovery_drill(root: &str) -> Result<RecoveryDrillReport, String> {
                 pitr_engine.edge_count()
             ));
         }
-        let mut pitr_integrity = pitr_engine
-            .verify_integrity()
-            .map_err(|error| format!("failed to verify PITR integrity for recovery drill: {error}"))?;
+        let mut pitr_integrity = pitr_engine.verify_integrity().map_err(|error| {
+            format!("failed to verify PITR integrity for recovery drill: {error}")
+        })?;
         pitr_integrity.node_count = pitr_engine.node_count();
         pitr_integrity.edge_count = pitr_engine.edge_count();
         (Some(pitr_elapsed_ms), Some(pitr_integrity))
@@ -709,7 +709,9 @@ fn run_recovery_drill(root: &str) -> Result<RecoveryDrillReport, String> {
         backup_elapsed_ms,
         restore_elapsed_ms,
         pitr_elapsed_ms,
-        backup_manifest_present: backup_dir.join(undr9_storage::BACKUP_MANIFEST_FILE_NAME).exists(),
+        backup_manifest_present: backup_dir
+            .join(undr9_storage::BACKUP_MANIFEST_FILE_NAME)
+            .exists(),
         source_integrity,
         restored_integrity,
         pitr_integrity,
@@ -722,8 +724,7 @@ async fn shutdown_signal(state: ApiState) {
     let terminate = async {
         use tokio::signal::unix::{signal, SignalKind};
 
-        let mut sigterm =
-            signal(SignalKind::terminate()).expect("SIGTERM handler must initialize");
+        let mut sigterm = signal(SignalKind::terminate()).expect("SIGTERM handler must initialize");
         sigterm.recv().await;
     };
 

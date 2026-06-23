@@ -171,12 +171,7 @@ impl GraphView for GraphSnapshot {
     }
 
     fn node_ids_by_type<'a>(&'a self, node_type: &'a str) -> Box<dyn Iterator<Item = NodeId> + 'a> {
-        Box::new(
-            self.indexes
-                .node_ids_by_type(node_type)
-                .iter()
-                .cloned(),
-        )
+        Box::new(self.indexes.node_ids_by_type(node_type).iter().cloned())
     }
 
     fn edge_ids_for_iter<'a>(
@@ -252,10 +247,7 @@ impl GraphView for OverlayGraphView<'_> {
             .lookup_unique_key(unique_key)
             .filter(|node_id| self.get_node(node_id).is_some())
             .filter(|node_id| {
-                self.get_node(node_id)
-                    .as_ref()
-                    .and_then(node_unique_key)
-                    == Some(unique_key)
+                self.get_node(node_id).as_ref().and_then(node_unique_key) == Some(unique_key)
             })
     }
 
@@ -360,7 +352,11 @@ impl GraphView for OverlayGraphView<'_> {
             .cloned()
             .collect::<BTreeSet<_>>();
         node_ids.extend(self.mutation.added_nodes.keys().cloned());
-        Box::new(node_ids.into_iter().filter_map(|node_id| self.get_node(&node_id)))
+        Box::new(
+            node_ids
+                .into_iter()
+                .filter_map(|node_id| self.get_node(&node_id)),
+        )
     }
 }
 
@@ -646,8 +642,13 @@ impl Executor {
                 limit,
             } => {
                 let limit = resolve_result_limit(*limit)?;
-                let (nodes, edges) =
-                    collect_neighbor_results(snapshot, node_id, *direction, edge_type.as_deref(), limit);
+                let (nodes, edges) = collect_neighbor_results(
+                    snapshot,
+                    node_id,
+                    *direction,
+                    edge_type.as_deref(),
+                    limit,
+                );
                 QueryExecution::from_response(QueryResponse {
                     plan_kind: plan.kind,
                     nodes,
@@ -741,19 +742,17 @@ impl Executor {
                 from_epoch_ms,
                 to_epoch_ms,
                 limit,
-            } => {
-                QueryExecution::new(
-                    plan.kind,
-                    None,
-                    time_range_execution_iter(
-                        snapshot,
-                        field.as_str(),
-                        *from_epoch_ms,
-                        *to_epoch_ms,
-                        *limit,
-                    ),
-                )
-            }
+            } => QueryExecution::new(
+                plan.kind,
+                None,
+                time_range_execution_iter(
+                    snapshot,
+                    field.as_str(),
+                    *from_epoch_ms,
+                    *to_epoch_ms,
+                    *limit,
+                ),
+            ),
             QueryRequest::VectorSearch {
                 query_vector,
                 node_type,
@@ -786,14 +785,16 @@ impl Executor {
                 let profile = resolve_retrieval_profile(retrieval_profile.as_deref())?;
                 let ranked_results = ranked_retrieval(
                     snapshot,
-                    query_vector.as_deref(),
-                    reference_node_id.as_ref(),
-                    edge_type.as_deref(),
-                    *from_epoch_ms,
-                    *to_epoch_ms,
-                    *limit,
-                    *now_epoch_ms,
-                    &profile,
+                    RankedRetrievalParams {
+                        query_vector: query_vector.as_deref(),
+                        reference_node_id: reference_node_id.as_ref(),
+                        edge_type: edge_type.as_deref(),
+                        from_epoch_ms: *from_epoch_ms,
+                        to_epoch_ms: *to_epoch_ms,
+                        limit: *limit,
+                        now_epoch_ms: *now_epoch_ms,
+                        profile: &profile,
+                    },
                 );
                 let nodes = ranked_results
                     .iter()
@@ -1092,9 +1093,7 @@ fn shortest_path(
     direction: EdgeDirection,
     runtime: &TraversalRuntime,
 ) -> Option<GraphPath> {
-    if !snapshot.contains_node(source_node_id)
-        || !snapshot.contains_node(target_node_id)
-    {
+    if !snapshot.contains_node(source_node_id) || !snapshot.contains_node(target_node_id) {
         return None;
     }
     if source_node_id == target_node_id {
@@ -1200,28 +1199,35 @@ fn vector_search(
     finalize_top_ranked_results(heap)
 }
 
-fn ranked_retrieval(
-    snapshot: &dyn GraphView,
-    query_vector: Option<&[f32]>,
-    reference_node_id: Option<&NodeId>,
-    edge_type: Option<&str>,
+struct RankedRetrievalParams<'a> {
+    query_vector: Option<&'a [f32]>,
+    reference_node_id: Option<&'a NodeId>,
+    edge_type: Option<&'a str>,
     from_epoch_ms: Option<i64>,
     to_epoch_ms: Option<i64>,
     limit: usize,
     now_epoch_ms: i64,
-    profile: &RetrievalProfile,
+    profile: &'a RetrievalProfile,
+}
+
+fn ranked_retrieval(
+    snapshot: &dyn GraphView,
+    params: RankedRetrievalParams<'_>,
 ) -> Vec<RankedNodeResult> {
-    let structural_distances = reference_node_id
-        .map(|reference_node_id| graph_distances(snapshot, reference_node_id, edge_type));
+    let structural_distances = params
+        .reference_node_id
+        .map(|reference_node_id| graph_distances(snapshot, reference_node_id, params.edge_type));
 
     let mut heap = BinaryHeap::new();
-    for result in ranked_retrieval_candidates(snapshot, from_epoch_ms, to_epoch_ms).map(|node| {
+    for result in ranked_retrieval_candidates(snapshot, params.from_epoch_ms, params.to_epoch_ms)
+        .map(|node| {
             let structural = structural_distances
                 .as_ref()
                 .and_then(|distances| distances.get(&node.id).copied())
                 .map(distance_to_score)
                 .unwrap_or(0.0);
-            let semantic = query_vector
+            let semantic = params
+                .query_vector
                 .and_then(|query_vector| {
                     node.embedding().and_then(|embedding| {
                         MemoryRanker::cosine_similarity(query_vector, embedding)
@@ -1230,7 +1236,9 @@ fn ranked_retrieval(
                 .unwrap_or(0.0);
             let temporal = node
                 .timestamp_ms()
-                .map(|timestamp| MemoryRanker::temporal_recency_score(timestamp, now_epoch_ms))
+                .map(|timestamp| {
+                    MemoryRanker::temporal_recency_score(timestamp, params.now_epoch_ms)
+                })
                 .unwrap_or(0.0);
             let importance = MemoryRanker::normalize_signal(node.importance());
             let confidence = MemoryRanker::normalize_signal(node.confidence());
@@ -1244,12 +1252,12 @@ fn ranked_retrieval(
 
             RankedNodeResult {
                 node,
-                score: MemoryRanker::rank(breakdown, profile.weights),
+                score: MemoryRanker::rank(breakdown, params.profile.weights),
                 breakdown,
             }
         })
     {
-        push_top_ranked_result(&mut heap, limit, result);
+        push_top_ranked_result(&mut heap, params.limit, result);
     }
     finalize_top_ranked_results(heap)
 }
@@ -1259,17 +1267,13 @@ fn vector_candidate_ids<'a>(
     node_type: Option<&'a str>,
 ) -> Box<dyn Iterator<Item = NodeId> + 'a> {
     match node_type {
-        Some(node_type) => Box::new(
+        Some(node_type) => Box::new(snapshot.node_ids_by_type(node_type).filter(move |node_id| {
             snapshot
-                .node_ids_by_type(node_type)
-                .filter(move |node_id| {
-                    snapshot
-                        .get_node(node_id)
-                        .as_ref()
-                        .and_then(NodeRecord::embedding)
-                        .is_some()
-                }),
-        ),
+                .get_node(node_id)
+                .as_ref()
+                .and_then(NodeRecord::embedding)
+                .is_some()
+        })),
         None => snapshot.vector_candidate_ids_iter(),
     }
 }
@@ -1457,10 +1461,7 @@ fn expand_neighbors_iter<'a>(
             .filter_map(move |edge_id| snapshot.get_edge(&edge_id))
             .filter(move |edge| {
                 constraints.edge_types.is_empty()
-                    || constraints
-                        .edge_types
-                        .iter()
-                        .any(|edge_type| edge.edge_type == *edge_type)
+                    || constraints.edge_types.contains(&edge.edge_type)
             })
             .filter_map(move |edge| {
                 let neighbor_id = match direction {
@@ -1476,10 +1477,7 @@ fn expand_neighbors_iter<'a>(
                 };
                 let neighbor = snapshot.get_node(&neighbor_id)?;
                 let label_matches = constraints.node_labels.is_empty()
-                    || constraints
-                        .node_labels
-                        .iter()
-                        .any(|label| neighbor.node_type == *label);
+                    || constraints.node_labels.contains(&neighbor.node_type);
                 label_matches.then_some((edge, neighbor_id))
             }),
     )
@@ -1655,7 +1653,13 @@ impl Ord for RankedHeapEntry {
             .result
             .score
             .total_cmp(&self.result.score)
-            .then_with(|| self.result.node.id.as_str().cmp(other.result.node.id.as_str()))
+            .then_with(|| {
+                self.result
+                    .node
+                    .id
+                    .as_str()
+                    .cmp(other.result.node.id.as_str())
+            })
     }
 }
 
@@ -1905,8 +1909,8 @@ mod tests {
         node_b
             .properties
             .insert("timestamp".to_owned(), PropertyValue::Integer(1_100));
-        let mut node_c =
-            NodeRecord::new(NodeId::new("node_c").expect("valid node id"), "profile").expect("node");
+        let mut node_c = NodeRecord::new(NodeId::new("node_c").expect("valid node id"), "profile")
+            .expect("node");
         node_c
             .properties
             .insert("custom_time".to_owned(), PropertyValue::Integer(1_050));
@@ -2108,7 +2112,10 @@ mod tests {
             edges: vec![(edge_ab.id.clone(), edge_ab.clone())]
                 .into_iter()
                 .collect::<OrdMap<_, _>>(),
-            indexes: GraphIndex::rebuild(&[node_a.clone(), node_b.clone()], &[edge_ab.clone()]),
+            indexes: GraphIndex::rebuild(
+                &[node_a.clone(), node_b.clone()],
+                std::slice::from_ref(&edge_ab),
+            ),
         };
 
         let items = super::Executor::execute_iter(
@@ -2132,18 +2139,14 @@ mod tests {
             super::QueryExecutionItem::Node(node) => assert_eq!(node.id, node_a.id),
             other => panic!("unexpected first traversal item: {other:?}"),
         }
-        assert!(
-            items.iter().any(|item| matches!(
-                item,
-                super::QueryExecutionItem::Edge(edge) if edge.id == edge_ab.id
-            ))
-        );
-        assert!(
-            items.iter().any(|item| matches!(
-                item,
-                super::QueryExecutionItem::Node(node) if node.id == node_b.id
-            ))
-        );
+        assert!(items.iter().any(|item| matches!(
+            item,
+            super::QueryExecutionItem::Edge(edge) if edge.id == edge_ab.id
+        )));
+        assert!(items.iter().any(|item| matches!(
+            item,
+            super::QueryExecutionItem::Node(node) if node.id == node_b.id
+        )));
     }
 
     #[test]

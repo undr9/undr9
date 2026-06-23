@@ -14,10 +14,10 @@ use opentelemetry_sdk::propagation::TraceContextPropagator;
 use opentelemetry_sdk::trace::SdkTracerProvider;
 use opentelemetry_sdk::Resource;
 use serde::{Deserialize, Serialize};
+use tracing_opentelemetry::OpenTelemetrySpanExt;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
-use tracing_opentelemetry::OpenTelemetrySpanExt;
 use undr9_common::{Result, Undr9Error};
 
 static TRACING_INITIALIZED: OnceLock<()> = OnceLock::new();
@@ -487,7 +487,14 @@ pub fn export_audit_events(path: &Path, limit: usize) -> Result<Vec<AuditEvent>>
     };
 
     let mut events = Vec::new();
-    for line in payload.lines().rev().take(limit).collect::<Vec<_>>().into_iter().rev() {
+    for line in payload
+        .lines()
+        .rev()
+        .take(limit)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+    {
         if line.trim().is_empty() {
             continue;
         }
@@ -542,10 +549,7 @@ pub fn now_epoch_ms() -> u128 {
         .as_millis()
 }
 
-pub fn initialize_tracing(
-    service_name: &str,
-    config: &RuntimeObservabilityConfig,
-) -> Result<bool> {
+pub fn initialize_tracing(service_name: &str, config: &RuntimeObservabilityConfig) -> Result<bool> {
     if !config.tracing_enabled {
         return Ok(false);
     }
@@ -567,16 +571,18 @@ pub fn initialize_tracing(
             tracing_subscriber::registry()
                 .with(filter)
                 .with(tracing_subscriber::fmt::layer().json().with_target(true))
-                .with(tracing_opentelemetry::layer().with_tracer(
-                    provider.tracer(service_name.to_owned()),
-                ))
+                .with(
+                    tracing_opentelemetry::layer()
+                        .with_tracer(provider.tracer(service_name.to_owned())),
+                )
                 .try_init()
         } else {
             tracing_subscriber::registry()
                 .with(filter)
-                .with(tracing_opentelemetry::layer().with_tracer(
-                    provider.tracer(service_name.to_owned()),
-                ))
+                .with(
+                    tracing_opentelemetry::layer()
+                        .with_tracer(provider.tracer(service_name.to_owned())),
+                )
                 .with(tracing_subscriber::fmt::layer().with_target(true))
                 .try_init()
         }
@@ -623,9 +629,9 @@ pub fn shutdown_tracing() -> Result<()> {
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     if let Some(provider) = provider.take() {
-        provider
-            .shutdown()
-            .map_err(|error| Undr9Error::Conflict(format!("failed to shutdown otlp exporter: {error}")))?;
+        provider.shutdown().map_err(|error| {
+            Undr9Error::Conflict(format!("failed to shutdown otlp exporter: {error}"))
+        })?;
     }
     Ok(())
 }
@@ -696,9 +702,7 @@ enum OtlpProtocol {
 fn normalize_otlp_protocol(protocol: &str) -> Result<OtlpProtocol> {
     match protocol.trim().to_ascii_lowercase().as_str() {
         "" | "grpc" => Ok(OtlpProtocol::Grpc),
-        "http" | "http/protobuf" | "http_binary" | "http-binary" => {
-            Ok(OtlpProtocol::HttpBinary)
-        }
+        "http" | "http/protobuf" | "http_binary" | "http-binary" => Ok(OtlpProtocol::HttpBinary),
         other => Err(Undr9Error::Validation(format!(
             "unsupported OTLP protocol '{other}'"
         ))),
@@ -731,11 +735,12 @@ fn build_otlp_metadata(
 ) -> Result<opentelemetry_otlp::tonic_types::metadata::MetadataMap> {
     let mut http_headers = http::HeaderMap::new();
     for (key, value) in headers {
-        let header_name = http::header::HeaderName::from_bytes(key.as_bytes()).map_err(|error| {
-            Undr9Error::Validation(format!(
-                "invalid observability.otlp_headers key '{key}': {error}"
-            ))
-        })?;
+        let header_name =
+            http::header::HeaderName::from_bytes(key.as_bytes()).map_err(|error| {
+                Undr9Error::Validation(format!(
+                    "invalid observability.otlp_headers key '{key}': {error}"
+                ))
+            })?;
         let header_value = http::HeaderValue::from_str(value).map_err(|error| {
             Undr9Error::Validation(format!(
                 "invalid observability.otlp_headers value for '{key}': {error}"
@@ -743,9 +748,7 @@ fn build_otlp_metadata(
         })?;
         http_headers.insert(header_name, header_value);
     }
-    Ok(opentelemetry_otlp::tonic_types::metadata::MetadataMap::from_headers(
-        http_headers,
-    ))
+    Ok(opentelemetry_otlp::tonic_types::metadata::MetadataMap::from_headers(http_headers))
 }
 
 #[cfg(test)]
@@ -941,7 +944,9 @@ mod tests {
 
         let metadata = build_otlp_metadata(&headers).expect("metadata should build");
         assert_eq!(
-            metadata.get("authorization").and_then(|value| value.to_str().ok()),
+            metadata
+                .get("authorization")
+                .and_then(|value| value.to_str().ok()),
             Some("Bearer token")
         );
     }

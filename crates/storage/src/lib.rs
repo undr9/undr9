@@ -16,8 +16,9 @@ use undr9_memory::{ConsolidationAction, ConsolidationEvent, MemoryConsolidator};
 use undr9_wal::{CheckpointMarker, LogSequenceNumber, Wal, WalRecordKind};
 
 pub const MANIFEST_FILE_NAME: &str = "manifest.json";
-pub const DATA_DIRECTORIES: [&str; 7] =
-    ["wal", "nodes", "edges", "indexes", "vectors", "deltas", "meta"];
+pub const DATA_DIRECTORIES: [&str; 7] = [
+    "wal", "nodes", "edges", "indexes", "vectors", "deltas", "meta",
+];
 pub const NODE_SEGMENT_FILE_NAME: &str = "segment-0000000000000001.snapshot.rkyv";
 pub const EDGE_SEGMENT_FILE_NAME: &str = "segment-0000000000000001.snapshot.rkyv";
 pub const VECTOR_SEGMENT_FILE_NAME: &str = "segment-0000000000000001.snapshot.rkyv";
@@ -810,8 +811,7 @@ impl StorageEngine {
 
         self.stage_operation_on_session(&mut session, operation)?;
         let summary = summary_for_session(&session);
-        self.transactions
-            .insert(transaction_id.clone(), session);
+        self.transactions.insert(transaction_id.clone(), session);
 
         Ok(summary)
     }
@@ -1131,7 +1131,9 @@ impl StorageEngine {
     }
 
     fn rebuild_lineage(&mut self) {
-        self.commit_revision = self.latest_applied_lsn.unwrap_or(self.manifest.last_applied_lsn.unwrap_or(0));
+        self.commit_revision = self
+            .latest_applied_lsn
+            .unwrap_or(self.manifest.last_applied_lsn.unwrap_or(0));
         self.node_lineage = self
             .nodes
             .keys()
@@ -1191,11 +1193,7 @@ impl StorageEngine {
         }
 
         self.latest_applied_lsn = latest_seen_lsn.or(self.manifest.last_applied_lsn);
-        if latest_seen_lsn.is_some() {
-            self.checkpoint_dirty = true;
-        } else {
-            self.checkpoint_dirty = false;
-        }
+        self.checkpoint_dirty = latest_seen_lsn.is_some();
         Ok(())
     }
 
@@ -1356,7 +1354,8 @@ pub fn verify_storage_layout(layout: &StorageLayout) -> Result<IntegrityReport> 
         None
     };
 
-    let (node_snapshot_valid, edge_snapshot_valid, node_count, edge_count) = match manifest.as_ref() {
+    let (node_snapshot_valid, edge_snapshot_valid, node_count, edge_count) = match manifest.as_ref()
+    {
         Some(manifest) => match load_published_state(layout, manifest) {
             Ok((nodes, edges)) => (true, true, nodes.len(), edges.len()),
             Err(error) => {
@@ -1482,7 +1481,9 @@ fn restore_directory_internal(
         })?;
         trim_restored_wal_to_lsn(&staging_dir, target_lsn, wal_config)?;
         let integrity = verify_storage_layout(&StorageLayout::new(&staging_dir))?;
-        if !integrity.node_snapshot_valid || !integrity.edge_snapshot_valid || !integrity.wal_replay_valid
+        if !integrity.node_snapshot_valid
+            || !integrity.edge_snapshot_valid
+            || !integrity.wal_replay_valid
         {
             return Err(Undr9Error::Corruption(format!(
                 "staged point-in-time restore '{}' failed integrity validation",
@@ -1552,8 +1553,8 @@ pub fn repair_storage(config: &AppConfig) -> Result<IntegrityReport> {
         edges,
         node_lineage: BTreeMap::new(),
         edge_lineage: BTreeMap::new(),
-            node_versions: BTreeMap::new(),
-            edge_versions: BTreeMap::new(),
+        node_versions: BTreeMap::new(),
+        edge_versions: BTreeMap::new(),
         commit_revision: last_applied_lsn.unwrap_or(0),
         latest_applied_lsn: last_applied_lsn,
         checkpoint_dirty: false,
@@ -1626,7 +1627,11 @@ fn apply_batch_to_maps_unchecked(
         edges.insert(edge.id.clone(), edge.clone());
     }
 
-    let deleted_nodes = batch.deleted_node_ids.iter().cloned().collect::<BTreeSet<_>>();
+    let deleted_nodes = batch
+        .deleted_node_ids
+        .iter()
+        .cloned()
+        .collect::<BTreeSet<_>>();
     for node_id in &deleted_nodes {
         nodes.remove(node_id);
     }
@@ -1700,7 +1705,11 @@ fn batch_effects(edges: &BTreeMap<EdgeId, EdgeRecord>, batch: &WriteBatch) -> Ba
     let mut touched_edge_ids = BTreeSet::new();
     extend_touched_sets(&mut touched_node_ids, &mut touched_edge_ids, batch);
 
-    let deleted_nodes = batch.deleted_node_ids.iter().cloned().collect::<BTreeSet<_>>();
+    let deleted_nodes = batch
+        .deleted_node_ids
+        .iter()
+        .cloned()
+        .collect::<BTreeSet<_>>();
     if !deleted_nodes.is_empty() {
         for edge in edges.values() {
             if deleted_nodes.contains(&edge.source) || deleted_nodes.contains(&edge.target) {
@@ -1789,13 +1798,7 @@ fn visible_node_at_revision(
     node_lineage: &BTreeMap<NodeId, u64>,
     node_versions: &BTreeMap<NodeId, Vec<VersionedValue<NodeRecord>>>,
 ) -> Option<NodeRecord> {
-    visible_value_at_revision(
-        node_id,
-        revision,
-        live_nodes,
-        node_lineage,
-        node_versions,
-    )
+    visible_value_at_revision(node_id, revision, live_nodes, node_lineage, node_versions)
 }
 
 fn visible_edge_at_revision(
@@ -1805,13 +1808,7 @@ fn visible_edge_at_revision(
     edge_lineage: &BTreeMap<EdgeId, u64>,
     edge_versions: &BTreeMap<EdgeId, Vec<VersionedValue<EdgeRecord>>>,
 ) -> Option<EdgeRecord> {
-    visible_value_at_revision(
-        edge_id,
-        revision,
-        live_edges,
-        edge_lineage,
-        edge_versions,
-    )
+    visible_value_at_revision(edge_id, revision, live_edges, edge_lineage, edge_versions)
 }
 
 fn visible_value_at_revision<K, T>(
@@ -1991,11 +1988,11 @@ fn load_node_state(
         )));
     }
 
-    Ok(snapshot
+    snapshot
         .records
         .into_iter()
         .map(|record| record.into_node().map(|node| (node.id.clone(), node)))
-        .collect::<Result<BTreeMap<_, _>>>()?)
+        .collect::<Result<BTreeMap<_, _>>>()
 }
 
 fn load_published_state(
@@ -2035,11 +2032,11 @@ fn load_raw_node_state(layout: &StorageLayout) -> Result<BTreeMap<NodeId, NodeRe
     })?;
     let snapshot = load_node_snapshot_from_bytes(&path, &bytes)?;
 
-    Ok(snapshot
+    snapshot
         .records
         .into_iter()
         .map(|record| record.into_node().map(|node| (node.id.clone(), node)))
-        .collect::<Result<BTreeMap<_, _>>>()?)
+        .collect::<Result<BTreeMap<_, _>>>()
 }
 
 fn load_edge_state(
@@ -2063,11 +2060,11 @@ fn load_edge_state(
         )));
     }
 
-    Ok(snapshot
+    snapshot
         .records
         .into_iter()
         .map(|record| record.into_edge().map(|edge| (edge.id.clone(), edge)))
-        .collect::<Result<BTreeMap<_, _>>>()?)
+        .collect::<Result<BTreeMap<_, _>>>()
 }
 
 fn load_raw_edge_state(layout: &StorageLayout) -> Result<BTreeMap<EdgeId, EdgeRecord>> {
@@ -2086,11 +2083,11 @@ fn load_raw_edge_state(layout: &StorageLayout) -> Result<BTreeMap<EdgeId, EdgeRe
     })?;
     let snapshot = load_edge_snapshot_from_bytes(&path, &bytes)?;
 
-    Ok(snapshot
+    snapshot
         .records
         .into_iter()
         .map(|record| record.into_edge().map(|edge| (edge.id.clone(), edge)))
-        .collect::<Result<BTreeMap<_, _>>>()?)
+        .collect::<Result<BTreeMap<_, _>>>()
 }
 
 fn attach_vectors(
@@ -2361,7 +2358,10 @@ fn read_verified_file(layout: &StorageLayout, manifest: &Manifest, path: &Path) 
     Ok(bytes)
 }
 
-fn manifest_delta_segment_paths(layout: &StorageLayout, manifest: &Manifest) -> Result<Vec<PathBuf>> {
+fn manifest_delta_segment_paths(
+    layout: &StorageLayout,
+    manifest: &Manifest,
+) -> Result<Vec<PathBuf>> {
     let mut paths = manifest
         .files
         .values()
