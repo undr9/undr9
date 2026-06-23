@@ -9,6 +9,9 @@ docker build -t undr9:local .
 The repository also publishes container images to GitHub Container Registry through
 [docker.yml](file:///Users/mdinjemamulirshad/Documents/projects/undr9-memorydb/.github/workflows/docker.yml).
 The published image name is `ghcr.io/undr9/undr9`.
+The GitHub Actions workflow publishes a multi-arch manifest for `linux/amd64` and
+`linux/arm64`, so Docker Desktop users on macOS and Windows and Linux servers on
+either architecture can pull the same tag.
 
 ## Run
 
