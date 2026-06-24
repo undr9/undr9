@@ -1,5 +1,8 @@
 # Contributing To UNDR9
 
+Start with `DEVELOPERS.md` for local setup, repository orientation, operational
+commands, and common troubleshooting before making changes.
+
 ## Development Expectations
 
 - keep module boundaries aligned with `docs/repository-structure.md`

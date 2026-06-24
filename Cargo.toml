@@ -32,6 +32,7 @@ axum = "0.7"
 clap = { version = "4.5", features = ["derive"] }
 crc32fast = "1.4"
 dashmap = "6"
+hnsw_stable = { package = "hnsw-stable", version = "0.10.1" }
 http = "1"
 im = { version = "15", features = ["serde"] }
 rkyv = { version = "0.7.46", features = ["validation"] }

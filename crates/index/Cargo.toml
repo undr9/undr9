@@ -10,7 +10,13 @@ documentation.workspace = true
 authors.workspace = true
 
 [dependencies]
+hnsw_stable.workspace = true
 im.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 undr9-common = { path = "../common" }
+undr9-config = { path = "../config" }
 undr9-core = { path = "../core" }
+
+[dev-dependencies]
+tempfile.workspace = true

@@ -11,6 +11,7 @@ pub struct AppConfig {
     pub wal: WalConfig,
     pub auth: AuthConfig,
     pub maintenance: MaintenanceConfig,
+    pub vector_index: VectorIndexConfig,
     pub observability: ObservabilityConfig,
 }
 
@@ -48,6 +49,22 @@ pub struct AuthConfig {
 pub struct MaintenanceConfig {
     pub max_node_count: usize,
     pub max_edge_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct VectorIndexConfig {
+    pub backend: VectorIndexBackendConfig,
+    pub exact_fallback_threshold: usize,
+    pub semantic_top_k: usize,
+    pub hnsw_m: usize,
+    pub hnsw_ef_construction: usize,
+    pub hnsw_ef_search: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum VectorIndexBackendConfig {
+    Exact,
+    Hnsw,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -98,6 +115,14 @@ impl Default for AppConfig {
             maintenance: MaintenanceConfig {
                 max_node_count: 5_000_000,
                 max_edge_count: 10_000_000,
+            },
+            vector_index: VectorIndexConfig {
+                backend: VectorIndexBackendConfig::Exact,
+                exact_fallback_threshold: 50_000,
+                semantic_top_k: 100,
+                hnsw_m: 16,
+                hnsw_ef_construction: 200,
+                hnsw_ef_search: 64,
             },
             observability: ObservabilityConfig {
                 log_level: "info".to_owned(),
@@ -189,6 +214,39 @@ impl AppConfig {
         if let Ok(value) = std::env::var("UNDR9_MAINTENANCE_MAX_EDGES") {
             if let Ok(parsed) = value.trim().parse::<usize>() {
                 self.maintenance.max_edge_count = parsed;
+            }
+        }
+        if let Ok(value) = std::env::var("UNDR9_VECTOR_INDEX_BACKEND") {
+            let normalized = value.trim().to_ascii_lowercase();
+            match normalized.as_str() {
+                "exact" => self.vector_index.backend = VectorIndexBackendConfig::Exact,
+                "hnsw" => self.vector_index.backend = VectorIndexBackendConfig::Hnsw,
+                _ => {}
+            }
+        }
+        if let Ok(value) = std::env::var("UNDR9_VECTOR_INDEX_EXACT_FALLBACK_THRESHOLD") {
+            if let Ok(parsed) = value.trim().parse::<usize>() {
+                self.vector_index.exact_fallback_threshold = parsed;
+            }
+        }
+        if let Ok(value) = std::env::var("UNDR9_VECTOR_INDEX_SEMANTIC_TOP_K") {
+            if let Ok(parsed) = value.trim().parse::<usize>() {
+                self.vector_index.semantic_top_k = parsed;
+            }
+        }
+        if let Ok(value) = std::env::var("UNDR9_HNSW_M") {
+            if let Ok(parsed) = value.trim().parse::<usize>() {
+                self.vector_index.hnsw_m = parsed;
+            }
+        }
+        if let Ok(value) = std::env::var("UNDR9_HNSW_EF_CONSTRUCTION") {
+            if let Ok(parsed) = value.trim().parse::<usize>() {
+                self.vector_index.hnsw_ef_construction = parsed;
+            }
+        }
+        if let Ok(value) = std::env::var("UNDR9_HNSW_EF_SEARCH") {
+            if let Ok(parsed) = value.trim().parse::<usize>() {
+                self.vector_index.hnsw_ef_search = parsed;
             }
         }
         if let Ok(value) = std::env::var("UNDR9_LOG_LEVEL") {
@@ -353,6 +411,31 @@ impl AppConfig {
                 "maintenance.max_edge_count must be greater than zero".to_owned(),
             ));
         }
+        if self.vector_index.exact_fallback_threshold == 0 {
+            return Err(Undr9Error::Validation(
+                "vector_index.exact_fallback_threshold must be greater than zero".to_owned(),
+            ));
+        }
+        if self.vector_index.semantic_top_k == 0 {
+            return Err(Undr9Error::Validation(
+                "vector_index.semantic_top_k must be greater than zero".to_owned(),
+            ));
+        }
+        if self.vector_index.hnsw_m < 2 {
+            return Err(Undr9Error::Validation(
+                "vector_index.hnsw_m must be at least two".to_owned(),
+            ));
+        }
+        if self.vector_index.hnsw_ef_construction == 0 {
+            return Err(Undr9Error::Validation(
+                "vector_index.hnsw_ef_construction must be greater than zero".to_owned(),
+            ));
+        }
+        if self.vector_index.hnsw_ef_search == 0 {
+            return Err(Undr9Error::Validation(
+                "vector_index.hnsw_ef_search must be greater than zero".to_owned(),
+            ));
+        }
 
         if self.observability.log_level.trim().is_empty() {
             return Err(Undr9Error::Validation(
@@ -397,6 +480,19 @@ impl AppConfig {
     }
 }
 
+impl Default for VectorIndexConfig {
+    fn default() -> Self {
+        Self {
+            backend: VectorIndexBackendConfig::Exact,
+            exact_fallback_threshold: 50_000,
+            semantic_top_k: 100,
+            hnsw_m: 16,
+            hnsw_ef_construction: 200,
+            hnsw_ef_search: 64,
+        }
+    }
+}
+
 fn generate_bootstrap_api_key(role: &str) -> String {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -410,7 +506,7 @@ fn generate_bootstrap_api_key(role: &str) -> String {
 mod tests {
     use std::path::PathBuf;
 
-    use super::AppConfig;
+    use super::{AppConfig, VectorIndexBackendConfig};
 
     #[test]
     fn default_configuration_is_valid() {
@@ -515,6 +611,12 @@ mod tests {
         std::env::set_var("UNDR9_WAL_FSYNC_ON_WRITE", "false");
         std::env::set_var("UNDR9_MAINTENANCE_MAX_NODES", "123");
         std::env::set_var("UNDR9_MAINTENANCE_MAX_EDGES", "456");
+        std::env::set_var("UNDR9_VECTOR_INDEX_BACKEND", "exact");
+        std::env::set_var("UNDR9_VECTOR_INDEX_EXACT_FALLBACK_THRESHOLD", "2048");
+        std::env::set_var("UNDR9_VECTOR_INDEX_SEMANTIC_TOP_K", "77");
+        std::env::set_var("UNDR9_HNSW_M", "24");
+        std::env::set_var("UNDR9_HNSW_EF_CONSTRUCTION", "300");
+        std::env::set_var("UNDR9_HNSW_EF_SEARCH", "90");
 
         config.apply_env_overrides();
 
@@ -528,6 +630,12 @@ mod tests {
         assert!(!config.wal.fsync_on_write);
         assert_eq!(config.maintenance.max_node_count, 123);
         assert_eq!(config.maintenance.max_edge_count, 456);
+        assert_eq!(config.vector_index.backend, VectorIndexBackendConfig::Exact);
+        assert_eq!(config.vector_index.exact_fallback_threshold, 2048);
+        assert_eq!(config.vector_index.semantic_top_k, 77);
+        assert_eq!(config.vector_index.hnsw_m, 24);
+        assert_eq!(config.vector_index.hnsw_ef_construction, 300);
+        assert_eq!(config.vector_index.hnsw_ef_search, 90);
 
         std::env::remove_var("UNDR9_BIND_ADDRESS");
         std::env::remove_var("UNDR9_REQUEST_TIMEOUT_MS");
@@ -539,5 +647,49 @@ mod tests {
         std::env::remove_var("UNDR9_WAL_FSYNC_ON_WRITE");
         std::env::remove_var("UNDR9_MAINTENANCE_MAX_NODES");
         std::env::remove_var("UNDR9_MAINTENANCE_MAX_EDGES");
+        std::env::remove_var("UNDR9_VECTOR_INDEX_BACKEND");
+        std::env::remove_var("UNDR9_VECTOR_INDEX_EXACT_FALLBACK_THRESHOLD");
+        std::env::remove_var("UNDR9_VECTOR_INDEX_SEMANTIC_TOP_K");
+        std::env::remove_var("UNDR9_HNSW_M");
+        std::env::remove_var("UNDR9_HNSW_EF_CONSTRUCTION");
+        std::env::remove_var("UNDR9_HNSW_EF_SEARCH");
+    }
+
+    #[test]
+    fn rejects_invalid_vector_index_settings() {
+        let mut config = AppConfig::default();
+        config.vector_index.exact_fallback_threshold = 0;
+        let error = config
+            .validate()
+            .expect_err("zero exact fallback threshold should fail validation");
+        assert!(error.to_string().contains("exact_fallback_threshold"));
+
+        config.vector_index.exact_fallback_threshold = 1;
+        config.vector_index.semantic_top_k = 0;
+        let error = config
+            .validate()
+            .expect_err("zero semantic top k should fail validation");
+        assert!(error.to_string().contains("semantic_top_k"));
+
+        config.vector_index.semantic_top_k = 1;
+        config.vector_index.hnsw_m = 1;
+        let error = config
+            .validate()
+            .expect_err("hnsw m below two should fail validation");
+        assert!(error.to_string().contains("hnsw_m"));
+
+        config.vector_index.hnsw_m = 16;
+        config.vector_index.hnsw_ef_construction = 0;
+        let error = config
+            .validate()
+            .expect_err("zero ef construction should fail validation");
+        assert!(error.to_string().contains("hnsw_ef_construction"));
+
+        config.vector_index.hnsw_ef_construction = 200;
+        config.vector_index.hnsw_ef_search = 0;
+        let error = config
+            .validate()
+            .expect_err("zero ef search should fail validation");
+        assert!(error.to_string().contains("hnsw_ef_search"));
     }
 }

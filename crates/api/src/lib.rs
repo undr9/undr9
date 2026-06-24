@@ -24,12 +24,12 @@ use tracing::Instrument;
 use undr9_auth::{Action, ApiKeyAuthenticator, Authorizer, Principal};
 use undr9_cluster::{ClusterManager, ClusterTopology, FailoverPlan};
 use undr9_common::{EdgeId, NodeId, Result as Undr9Result, TransactionId, Undr9Error};
-use undr9_config::AppConfig;
+use undr9_config::{AppConfig, VectorIndexConfig};
 use undr9_core::{
     EdgeRecord, IsolationLevel, NodeRecord, TransactionCommitResult, TransactionOperation,
     TransactionSummary, WriteBatch,
 };
-use undr9_index::{GraphIndex, IndexSnapshot};
+use undr9_index::{GraphIndex, IndexSnapshot, VectorIndexLoadConfig};
 use undr9_observability::{
     annotate_active_span_error, annotate_active_span_success, append_audit_event,
     export_audit_events, now_epoch_ms, prune_audit_log, AuditEvent, EndpointMetricsSnapshot,
@@ -59,6 +59,7 @@ const TRACE_ID_HEADER: &str = "x-undr9-trace-id";
 pub struct Database {
     engine: StorageEngine,
     indexes: GraphIndex,
+    vector_index_config: VectorIndexConfig,
     published_snapshot: Arc<GraphSnapshot>,
     replication: ReplicationManager,
     cluster: ClusterManager,
@@ -405,7 +406,24 @@ impl Database {
         );
         let _startup_guard = startup_span.enter();
         let engine = StorageEngine::open(config)?;
-        let indexes = GraphIndex::rebuild(&engine.all_nodes(), &engine.all_edges());
+        let nodes = engine.all_nodes();
+        let edges = engine.all_edges();
+        let allow_vector_index_load = engine.manifest().last_clean_shutdown
+            && engine.latest_applied_lsn() == engine.manifest().last_applied_lsn;
+        let vector_index_manifest_path = engine.layout().vector_index_manifest_path();
+        let vector_index_graph_path = engine.layout().vector_index_graph_path();
+        let vector_index_vectors_path = engine.layout().vector_index_vectors_path();
+        let indexes = GraphIndex::rebuild_with_config_and_vector_index_load(
+            &nodes,
+            &edges,
+            &config.vector_index,
+            allow_vector_index_load.then_some(VectorIndexLoadConfig {
+                manifest_path: &vector_index_manifest_path,
+                graph_path: &vector_index_graph_path,
+                vectors_path: &vector_index_vectors_path,
+                expected_last_applied_lsn: engine.latest_applied_lsn(),
+            }),
+        );
         let replication = load_json_file(
             engine
                 .layout()
@@ -424,6 +442,7 @@ impl Database {
         let database = Self {
             engine,
             indexes,
+            vector_index_config: config.vector_index.clone(),
             published_snapshot,
             replication,
             cluster,
@@ -447,7 +466,9 @@ impl Database {
     }
 
     pub fn graceful_shutdown(&mut self) -> Undr9Result<()> {
-        self.engine.graceful_shutdown()
+        self.engine.graceful_shutdown()?;
+        let _ = self.persist_index_snapshot()?;
+        Ok(())
     }
 
     pub fn upsert_node(&mut self, node: NodeRecord) -> Undr9Result<NodeRecord> {
@@ -628,6 +649,7 @@ impl Database {
             restore_directory(source, &config.storage.root_dir)?;
         }
         self.engine = StorageEngine::open(config)?;
+        self.vector_index_config = config.vector_index.clone();
         let _ = self.rebuild_indexes()?;
         tracing::info!(
             source = %source.display(),
@@ -648,6 +670,7 @@ impl Database {
         );
         let report = repair_storage(config)?;
         self.engine = StorageEngine::open(config)?;
+        self.vector_index_config = config.vector_index.clone();
         let _ = self.rebuild_indexes()?;
         tracing::info!(
             elapsed_ms = started.elapsed().as_millis() as u64,
@@ -797,6 +820,12 @@ impl Database {
                 path.display()
             ))
         })?;
+        self.indexes.persist_vector_index(
+            &self.engine.layout().vector_index_manifest_path(),
+            &self.engine.layout().vector_index_graph_path(),
+            &self.engine.layout().vector_index_vectors_path(),
+            self.engine.latest_applied_lsn(),
+        )?;
         tracing::debug!(
             snapshot_path = %path.display(),
             node_count = snapshot.node_count,
@@ -808,7 +837,11 @@ impl Database {
 
     fn refresh_indexes(&mut self, persist_snapshot: bool) -> Undr9Result<IndexSnapshot> {
         let started = Instant::now();
-        self.indexes = GraphIndex::rebuild(&self.engine.all_nodes(), &self.engine.all_edges());
+        self.indexes = GraphIndex::rebuild_with_config(
+            &self.engine.all_nodes(),
+            &self.engine.all_edges(),
+            &self.vector_index_config,
+        );
         self.publish_snapshot();
         let snapshot = if persist_snapshot {
             self.persist_index_snapshot()

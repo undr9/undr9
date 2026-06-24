@@ -257,6 +257,20 @@ impl StorageLayout {
         self.subdirectory("indexes").join(INDEX_SNAPSHOT_FILE_NAME)
     }
 
+    pub fn vector_index_manifest_path(&self) -> PathBuf {
+        self.subdirectory("indexes")
+            .join("vector-index.manifest.json")
+    }
+
+    pub fn vector_index_graph_path(&self) -> PathBuf {
+        self.subdirectory("indexes").join("vector-index.hnsw.bin")
+    }
+
+    pub fn vector_index_vectors_path(&self) -> PathBuf {
+        self.subdirectory("indexes")
+            .join("vector-index.vectors.bin")
+    }
+
     pub fn delta_directory(&self) -> PathBuf {
         self.subdirectory("deltas")
     }

@@ -121,6 +121,13 @@ pub struct GraphMutation {
     pub added_edges: BTreeMap<EdgeId, EdgeRecord>,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct SemanticCandidateQuery<'a> {
+    query_vector: &'a [f32],
+    node_type: Option<&'a str>,
+    limit: usize,
+}
+
 pub trait GraphView {
     fn get_node(&self, node_id: &NodeId) -> Option<NodeRecord>;
     fn get_edge(&self, edge_id: &EdgeId) -> Option<EdgeRecord>;
@@ -139,6 +146,10 @@ pub trait GraphView {
         to_epoch_ms: i64,
     ) -> Box<dyn Iterator<Item = NodeId> + 'a>;
     fn vector_candidate_ids_iter<'a>(&'a self) -> Box<dyn Iterator<Item = NodeId> + 'a>;
+    fn semantic_candidate_ids_iter<'a>(
+        &'a self,
+        query: SemanticCandidateQuery<'a>,
+    ) -> Box<dyn Iterator<Item = NodeId> + 'a>;
     fn all_nodes_iter<'a>(&'a self) -> Box<dyn Iterator<Item = NodeRecord> + 'a>;
 }
 
@@ -200,7 +211,18 @@ impl GraphView for GraphSnapshot {
     }
 
     fn vector_candidate_ids_iter<'a>(&'a self) -> Box<dyn Iterator<Item = NodeId> + 'a> {
-        Box::new(self.indexes.vector_candidate_ids().iter().cloned())
+        Box::new(self.indexes.vector_candidate_ids_iter().cloned())
+    }
+
+    fn semantic_candidate_ids_iter<'a>(
+        &'a self,
+        query: SemanticCandidateQuery<'a>,
+    ) -> Box<dyn Iterator<Item = NodeId> + 'a> {
+        Box::new(
+            self.indexes
+                .semantic_candidate_ids(query.query_vector, query.node_type, query.limit)
+                .into_iter(),
+        )
     }
 
     fn all_nodes_iter<'a>(&'a self) -> Box<dyn Iterator<Item = NodeRecord> + 'a> {
@@ -341,6 +363,23 @@ impl GraphView for OverlayGraphView<'_> {
                 .map(|node| node.id.clone()),
         );
         Box::new(node_ids.into_iter())
+    }
+
+    fn semantic_candidate_ids_iter<'a>(
+        &'a self,
+        query: SemanticCandidateQuery<'a>,
+    ) -> Box<dyn Iterator<Item = NodeId> + 'a> {
+        let _ = query.query_vector;
+        let _ = query.limit;
+        match query.node_type {
+            Some(node_type) => Box::new(self.node_ids_by_type(node_type).filter(move |node_id| {
+                self.get_node(node_id)
+                    .as_ref()
+                    .and_then(NodeRecord::embedding)
+                    .is_some()
+            })),
+            None => self.vector_candidate_ids_iter(),
+        }
     }
 
     fn all_nodes_iter<'a>(&'a self) -> Box<dyn Iterator<Item = NodeRecord> + 'a> {
@@ -1174,7 +1213,14 @@ fn vector_search(
     limit: usize,
 ) -> Vec<RankedNodeResult> {
     let mut heap = BinaryHeap::new();
-    let candidate_ids = vector_candidate_ids(snapshot, node_type);
+    let candidate_ids = semantic_candidate_ids(
+        snapshot,
+        SemanticCandidateQuery {
+            query_vector,
+            node_type,
+            limit,
+        },
+    );
     for result in candidate_ids
         .filter_map(|node_id| snapshot.get_node(&node_id))
         .filter_map(|node| {
@@ -1219,8 +1265,8 @@ fn ranked_retrieval(
         .map(|reference_node_id| graph_distances(snapshot, reference_node_id, params.edge_type));
 
     let mut heap = BinaryHeap::new();
-    for result in ranked_retrieval_candidates(snapshot, params.from_epoch_ms, params.to_epoch_ms)
-        .map(|node| {
+    for result in
+        ranked_retrieval_candidates(snapshot, &params, structural_distances.as_ref()).map(|node| {
             let structural = structural_distances
                 .as_ref()
                 .and_then(|distances| distances.get(&node.id).copied())
@@ -1262,38 +1308,53 @@ fn ranked_retrieval(
     finalize_top_ranked_results(heap)
 }
 
-fn vector_candidate_ids<'a>(
+fn semantic_candidate_ids<'a>(
     snapshot: &'a dyn GraphView,
-    node_type: Option<&'a str>,
+    query: SemanticCandidateQuery<'a>,
 ) -> Box<dyn Iterator<Item = NodeId> + 'a> {
-    match node_type {
-        Some(node_type) => Box::new(snapshot.node_ids_by_type(node_type).filter(move |node_id| {
-            snapshot
-                .get_node(node_id)
-                .as_ref()
-                .and_then(NodeRecord::embedding)
-                .is_some()
-        })),
-        None => snapshot.vector_candidate_ids_iter(),
-    }
+    snapshot.semantic_candidate_ids_iter(query)
 }
 
 fn ranked_retrieval_candidates<'a>(
     snapshot: &'a dyn GraphView,
-    from_epoch_ms: Option<i64>,
-    to_epoch_ms: Option<i64>,
+    params: &'a RankedRetrievalParams<'a>,
+    structural_distances: Option<&'a BTreeMap<NodeId, u8>>,
 ) -> Box<dyn Iterator<Item = NodeRecord> + 'a> {
-    match (from_epoch_ms, to_epoch_ms) {
+    if let Some(query_vector) = params.query_vector {
+        let mut candidate_ids = BTreeSet::new();
+        candidate_ids.extend(semantic_candidate_ids(
+            snapshot,
+            SemanticCandidateQuery {
+                query_vector,
+                node_type: None,
+                limit: params.limit,
+            },
+        ));
+        if let Some(structural_distances) = structural_distances {
+            candidate_ids.extend(structural_distances.keys().cloned());
+        }
+
+        if !candidate_ids.is_empty() {
+            return Box::new(
+                candidate_ids
+                    .into_iter()
+                    .filter_map(|node_id| snapshot.get_node(&node_id))
+                    .filter(move |node| {
+                        within_optional_time_range(node, params.from_epoch_ms, params.to_epoch_ms)
+                    }),
+            );
+        }
+    }
+
+    match (params.from_epoch_ms, params.to_epoch_ms) {
         (Some(from_epoch_ms), Some(to_epoch_ms)) => Box::new(
             snapshot
                 .node_ids_in_time_range_iter(from_epoch_ms, to_epoch_ms)
                 .filter_map(|node_id| snapshot.get_node(&node_id)),
         ),
-        _ => Box::new(
-            snapshot
-                .all_nodes_iter()
-                .filter(move |node| within_optional_time_range(node, from_epoch_ms, to_epoch_ms)),
-        ),
+        _ => Box::new(snapshot.all_nodes_iter().filter(move |node| {
+            within_optional_time_range(node, params.from_epoch_ms, params.to_epoch_ms)
+        })),
     }
 }
 
@@ -1704,6 +1765,69 @@ mod tests {
     use undr9_core::{EdgeRecord, NodeRecord, PropertyValue};
     use undr9_index::{EdgeDirection, GraphIndex};
 
+    struct SemanticCandidateGraphView<'a> {
+        base: &'a super::GraphSnapshot,
+        semantic_candidate_ids: Vec<NodeId>,
+    }
+
+    impl super::GraphView for SemanticCandidateGraphView<'_> {
+        fn get_node(&self, node_id: &NodeId) -> Option<NodeRecord> {
+            self.base.get_node(node_id)
+        }
+
+        fn get_edge(&self, edge_id: &EdgeId) -> Option<EdgeRecord> {
+            self.base.get_edge(edge_id)
+        }
+
+        fn contains_node(&self, node_id: &NodeId) -> bool {
+            self.base.contains_node(node_id)
+        }
+
+        fn lookup_unique_key(&self, unique_key: &str) -> Option<NodeId> {
+            self.base.lookup_unique_key(unique_key)
+        }
+
+        fn node_ids_by_type<'a>(
+            &'a self,
+            node_type: &'a str,
+        ) -> Box<dyn Iterator<Item = NodeId> + 'a> {
+            self.base.node_ids_by_type(node_type)
+        }
+
+        fn edge_ids_for_iter<'a>(
+            &'a self,
+            node_id: &'a NodeId,
+            direction: EdgeDirection,
+            edge_type: Option<&'a str>,
+        ) -> Box<dyn Iterator<Item = EdgeId> + 'a> {
+            self.base.edge_ids_for_iter(node_id, direction, edge_type)
+        }
+
+        fn node_ids_in_time_range_iter<'a>(
+            &'a self,
+            from_epoch_ms: i64,
+            to_epoch_ms: i64,
+        ) -> Box<dyn Iterator<Item = NodeId> + 'a> {
+            self.base
+                .node_ids_in_time_range_iter(from_epoch_ms, to_epoch_ms)
+        }
+
+        fn vector_candidate_ids_iter<'a>(&'a self) -> Box<dyn Iterator<Item = NodeId> + 'a> {
+            self.base.vector_candidate_ids_iter()
+        }
+
+        fn semantic_candidate_ids_iter<'a>(
+            &'a self,
+            _query: super::SemanticCandidateQuery<'a>,
+        ) -> Box<dyn Iterator<Item = NodeId> + 'a> {
+            Box::new(self.semantic_candidate_ids.clone().into_iter())
+        }
+
+        fn all_nodes_iter<'a>(&'a self) -> Box<dyn Iterator<Item = NodeRecord> + 'a> {
+            self.base.all_nodes_iter()
+        }
+    }
+
     #[test]
     fn planner_selects_exact_lookup_for_id_queries() {
         let request = super::QueryRequest::GetNodeById {
@@ -2086,6 +2210,98 @@ mod tests {
         assert!(ranked.ranked_results[0].score >= ranked.ranked_results[1].score);
         assert_eq!(ranked.ranked_results[0].node.id, node_a.id);
         assert_eq!(ranked.retrieval_profile.as_deref(), Some("v1-default"));
+    }
+
+    #[test]
+    fn ranked_retrieval_unions_semantic_and_structural_candidates() {
+        let mut node_a =
+            NodeRecord::new(NodeId::new("node_a").expect("valid node id"), "memory").expect("node");
+        node_a.properties.insert(
+            "embedding".to_owned(),
+            PropertyValue::FloatList(vec![1.0, 0.0]),
+        );
+        node_a
+            .properties
+            .insert("timestamp".to_owned(), PropertyValue::Integer(1_000));
+        node_a
+            .properties
+            .insert("importance".to_owned(), PropertyValue::Float(0.9));
+        node_a
+            .properties
+            .insert("confidence".to_owned(), PropertyValue::Float(0.9));
+
+        let mut node_b =
+            NodeRecord::new(NodeId::new("node_b").expect("valid node id"), "memory").expect("node");
+        node_b.properties.insert(
+            "embedding".to_owned(),
+            PropertyValue::FloatList(vec![0.0, 1.0]),
+        );
+        node_b
+            .properties
+            .insert("timestamp".to_owned(), PropertyValue::Integer(1_050));
+        node_b
+            .properties
+            .insert("importance".to_owned(), PropertyValue::Float(0.4));
+        node_b
+            .properties
+            .insert("confidence".to_owned(), PropertyValue::Float(0.4));
+
+        let edge_ab = EdgeRecord {
+            id: EdgeId::new("edge_ab").expect("valid edge id"),
+            source: node_a.id.clone(),
+            target: node_b.id.clone(),
+            edge_type: "relates_to".to_owned(),
+            properties: BTreeMap::new(),
+        };
+
+        let snapshot = super::GraphSnapshot {
+            nodes: vec![
+                (node_a.id.clone(), node_a.clone()),
+                (node_b.id.clone(), node_b.clone()),
+            ]
+            .into_iter()
+            .collect::<OrdMap<_, _>>(),
+            edges: vec![(edge_ab.id.clone(), edge_ab.clone())]
+                .into_iter()
+                .collect::<OrdMap<_, _>>(),
+            indexes: GraphIndex::rebuild(
+                &[node_a.clone(), node_b.clone()],
+                std::slice::from_ref(&edge_ab),
+            ),
+        };
+        let graph_view = SemanticCandidateGraphView {
+            base: &snapshot,
+            semantic_candidate_ids: vec![node_a.id.clone()],
+        };
+
+        let ranked = super::ranked_retrieval(
+            &graph_view,
+            super::RankedRetrievalParams {
+                query_vector: Some(&[1.0, 0.0]),
+                reference_node_id: Some(&node_a.id),
+                edge_type: Some("relates_to"),
+                from_epoch_ms: Some(900),
+                to_epoch_ms: Some(1_100),
+                limit: 5,
+                now_epoch_ms: 1_200,
+                profile: &super::RetrievalProfile::v1_default(),
+            },
+        );
+
+        assert_eq!(ranked.len(), 2);
+        assert_eq!(ranked[0].node.id, node_a.id);
+        assert!(ranked.iter().any(|result| result.node.id == node_b.id));
+        let node_a_result = ranked
+            .iter()
+            .find(|result| result.node.id == node_a.id)
+            .expect("node_a should remain in the candidate set");
+        let node_b_result = ranked
+            .iter()
+            .find(|result| result.node.id == node_b.id)
+            .expect("node_b should be retained by structural union");
+        assert!(node_b_result.breakdown.structural > 0.0);
+        assert!(node_b_result.breakdown.semantic <= 0.5);
+        assert!(node_b_result.breakdown.semantic < node_a_result.breakdown.semantic);
     }
 
     #[test]

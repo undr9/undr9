@@ -13,7 +13,6 @@
 /.dbg
 /tmp-review
 /debug-reconnect-missing-nodes.md
-/README.md
 /README_local.md
 /docs/adr
 /docs/architecture
