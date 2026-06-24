@@ -1,5 +1,5 @@
 {
-  "generated_at_ms": 1782295156081,
+  "generated_at_ms": 1782296299122,
   "host_os": "macos",
   "host_arch": "aarch64",
   "timing_unit": "microseconds",
@@ -10,7 +10,7 @@
     {
       "node_count": 100000,
       "edge_count": 99999,
-      "peak_rss_bytes": 886849536,
+      "peak_rss_bytes": 1178304512,
       "storage_footprint": {
         "wal_bytes": 40460493,
         "snapshot_bytes": 0,
@@ -18,183 +18,209 @@
         "index_bytes": 0,
         "total_bytes": 40460745,
         "post_compaction_total_bytes": 35158919,
-        "compaction_elapsed_us": 1024301,
-        "recovery_elapsed_us": 1225245
+        "compaction_elapsed_us": 996167,
+        "recovery_elapsed_us": 1213683
       },
       "vector_index_footprint": {
         "hnsw_index_bytes": 5892366,
-        "hnsw_build_elapsed_us": 183851434,
-        "hnsw_reload_elapsed_us": 126099574
+        "hnsw_build_elapsed_us": 173089223,
+        "hnsw_reload_elapsed_us": 117550732
       },
+      "quality_comparisons": [
+        {
+          "name": "vector_search",
+          "limit": 50,
+          "exact_result_count": 50,
+          "hnsw_result_count": 50,
+          "overlap_count": 50,
+          "overlap_ratio": 1.0,
+          "jaccard_ratio": 1.0,
+          "top1_match": true,
+          "exact_only_count": 0,
+          "hnsw_only_count": 0
+        },
+        {
+          "name": "ranked_retrieval",
+          "limit": 50,
+          "exact_result_count": 50,
+          "hnsw_result_count": 50,
+          "overlap_count": 13,
+          "overlap_ratio": 0.26,
+          "jaccard_ratio": 0.14942528735632185,
+          "top1_match": true,
+          "exact_only_count": 37,
+          "hnsw_only_count": 37
+        }
+      ],
       "scenarios": [
         {
           "name": "storage_upsert",
           "samples_us": [
-            4125187
+            4018189
           ],
-          "min_us": 4125187,
-          "p50_us": 4125187,
-          "p95_us": 4125187,
-          "p99_us": 4125187,
-          "max_us": 4125187,
-          "mean_us": 4125187.0,
-          "throughput_ops_per_sec": 0.2424132530234387
+          "min_us": 4018189,
+          "p50_us": 4018189,
+          "p95_us": 4018189,
+          "p99_us": 4018189,
+          "max_us": 4018189,
+          "mean_us": 4018189.0,
+          "throughput_ops_per_sec": 0.2488683334706257
         },
         {
           "name": "storage_delete",
           "samples_us": [
-            4914989
+            4896710
           ],
-          "min_us": 4914989,
-          "p50_us": 4914989,
-          "p95_us": 4914989,
-          "p99_us": 4914989,
-          "max_us": 4914989,
-          "mean_us": 4914989.0,
-          "throughput_ops_per_sec": 0.20345925494441594
+          "min_us": 4896710,
+          "p50_us": 4896710,
+          "p95_us": 4896710,
+          "p99_us": 4896710,
+          "max_us": 4896710,
+          "mean_us": 4896710.0,
+          "throughput_ops_per_sec": 0.2042187509572754
         },
         {
           "name": "wal_recovery",
           "samples_us": [
-            8660881
+            8596664
           ],
-          "min_us": 8660881,
-          "p50_us": 8660881,
-          "p95_us": 8660881,
-          "p99_us": 8660881,
-          "max_us": 8660881,
-          "mean_us": 8660881.0,
-          "throughput_ops_per_sec": 0.11546169494766179
+          "min_us": 8596664,
+          "p50_us": 8596664,
+          "p95_us": 8596664,
+          "p99_us": 8596664,
+          "max_us": 8596664,
+          "mean_us": 8596664.0,
+          "throughput_ops_per_sec": 0.11632419273336726
         },
         {
           "name": "exact_lookup",
           "samples_us": [
-            196
+            24
           ],
-          "min_us": 196,
-          "p50_us": 196,
-          "p95_us": 196,
-          "p99_us": 196,
-          "max_us": 196,
-          "mean_us": 196.0,
-          "throughput_ops_per_sec": 5102.040816326531
+          "min_us": 24,
+          "p50_us": 24,
+          "p95_us": 24,
+          "p99_us": 24,
+          "max_us": 24,
+          "mean_us": 24.0,
+          "throughput_ops_per_sec": 41666.666666666664
         },
         {
           "name": "list_neighbors_1_hop",
           "samples_us": [
-            183
+            32
           ],
-          "min_us": 183,
-          "p50_us": 183,
-          "p95_us": 183,
-          "p99_us": 183,
-          "max_us": 183,
-          "mean_us": 183.0,
-          "throughput_ops_per_sec": 5464.48087431694
+          "min_us": 32,
+          "p50_us": 32,
+          "p95_us": 32,
+          "p99_us": 32,
+          "max_us": 32,
+          "mean_us": 32.0,
+          "throughput_ops_per_sec": 31250.0
         },
         {
           "name": "label_scan",
           "samples_us": [
-            29776
+            14898
           ],
-          "min_us": 29776,
-          "p50_us": 29776,
-          "p95_us": 29776,
-          "p99_us": 29776,
-          "max_us": 29776,
-          "mean_us": 29776.0,
-          "throughput_ops_per_sec": 33.584094572810315
+          "min_us": 14898,
+          "p50_us": 14898,
+          "p95_us": 14898,
+          "p99_us": 14898,
+          "max_us": 14898,
+          "mean_us": 14898.0,
+          "throughput_ops_per_sec": 67.12310377231843
         },
         {
           "name": "traverse_5_hops",
           "samples_us": [
-            432
+            283
           ],
-          "min_us": 432,
-          "p50_us": 432,
-          "p95_us": 432,
-          "p99_us": 432,
-          "max_us": 432,
-          "mean_us": 432.0,
-          "throughput_ops_per_sec": 2314.814814814815
+          "min_us": 283,
+          "p50_us": 283,
+          "p95_us": 283,
+          "p99_us": 283,
+          "max_us": 283,
+          "mean_us": 283.0,
+          "throughput_ops_per_sec": 3533.5689045936397
         },
         {
           "name": "shortest_path",
           "samples_us": [
-            1431
+            954
           ],
-          "min_us": 1431,
-          "p50_us": 1431,
-          "p95_us": 1431,
-          "p99_us": 1431,
-          "max_us": 1431,
-          "mean_us": 1431.0,
-          "throughput_ops_per_sec": 698.8120195667366
+          "min_us": 954,
+          "p50_us": 954,
+          "p95_us": 954,
+          "p99_us": 954,
+          "max_us": 954,
+          "mean_us": 954.0,
+          "throughput_ops_per_sec": 1048.2180293501049
         },
         {
           "name": "temporal_range",
           "samples_us": [
-            4879
+            3484
           ],
-          "min_us": 4879,
-          "p50_us": 4879,
-          "p95_us": 4879,
-          "p99_us": 4879,
-          "max_us": 4879,
-          "mean_us": 4879.0,
-          "throughput_ops_per_sec": 204.96003279360525
+          "min_us": 3484,
+          "p50_us": 3484,
+          "p95_us": 3484,
+          "p99_us": 3484,
+          "max_us": 3484,
+          "mean_us": 3484.0,
+          "throughput_ops_per_sec": 287.0264064293915
         },
         {
           "name": "vector_search_exact",
           "samples_us": [
-            416775
+            387410
           ],
-          "min_us": 416775,
-          "p50_us": 416775,
-          "p95_us": 416775,
-          "p99_us": 416775,
-          "max_us": 416775,
-          "mean_us": 416775.0,
-          "throughput_ops_per_sec": 2.3993761621978287
+          "min_us": 387410,
+          "p50_us": 387410,
+          "p95_us": 387410,
+          "p99_us": 387410,
+          "max_us": 387410,
+          "mean_us": 387410.0,
+          "throughput_ops_per_sec": 2.5812446761828554
         },
         {
           "name": "ranked_retrieval_exact",
           "samples_us": [
-            411305
+            407710
           ],
-          "min_us": 411305,
-          "p50_us": 411305,
-          "p95_us": 411305,
-          "p99_us": 411305,
-          "max_us": 411305,
-          "mean_us": 411305.0,
-          "throughput_ops_per_sec": 2.4312857854876553
+          "min_us": 407710,
+          "p50_us": 407710,
+          "p95_us": 407710,
+          "p99_us": 407710,
+          "max_us": 407710,
+          "mean_us": 407710.0,
+          "throughput_ops_per_sec": 2.4527237497240684
         },
         {
           "name": "vector_search_hnsw",
           "samples_us": [
-            29773
+            20721
           ],
-          "min_us": 29773,
-          "p50_us": 29773,
-          "p95_us": 29773,
-          "p99_us": 29773,
-          "max_us": 29773,
-          "mean_us": 29773.0,
-          "throughput_ops_per_sec": 33.5874785879824
+          "min_us": 20721,
+          "p50_us": 20721,
+          "p95_us": 20721,
+          "p99_us": 20721,
+          "max_us": 20721,
+          "mean_us": 20721.0,
+          "throughput_ops_per_sec": 48.26021910139472
         },
         {
           "name": "ranked_retrieval_hnsw",
           "samples_us": [
-            1652
+            1012
           ],
-          "min_us": 1652,
-          "p50_us": 1652,
-          "p95_us": 1652,
-          "p99_us": 1652,
-          "max_us": 1652,
-          "mean_us": 1652.0,
-          "throughput_ops_per_sec": 605.3268765133172
+          "min_us": 1012,
+          "p50_us": 1012,
+          "p95_us": 1012,
+          "p99_us": 1012,
+          "max_us": 1012,
+          "mean_us": 1012.0,
+          "throughput_ops_per_sec": 988.1422924901186
         }
       ]
     }

@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fs;
 use std::path::PathBuf;
@@ -12,7 +12,7 @@ use undr9_common::{EdgeId, NodeId};
 use undr9_config::{AppConfig, VectorIndexBackendConfig, VectorIndexConfig};
 use undr9_core::{EdgeRecord, NodeRecord, PropertyValue};
 use undr9_index::{EdgeDirection, GraphIndex};
-use undr9_query::{Executor, GraphSnapshot, QueryRequest};
+use undr9_query::{Executor, GraphSnapshot, QueryRequest, QueryResponse};
 use undr9_storage::StorageEngine;
 
 type BenchResult<T> = Result<T, Box<dyn Error>>;
@@ -57,6 +57,7 @@ struct ScaleReport {
     peak_rss_bytes: Option<u64>,
     storage_footprint: StorageFootprintReport,
     vector_index_footprint: Option<VectorIndexFootprintReport>,
+    quality_comparisons: Vec<QualityComparisonReport>,
     scenarios: Vec<ScenarioReport>,
 }
 
@@ -77,6 +78,20 @@ struct VectorIndexFootprintReport {
     hnsw_index_bytes: u64,
     hnsw_build_elapsed_us: u128,
     hnsw_reload_elapsed_us: u128,
+}
+
+#[derive(Debug, Serialize)]
+struct QualityComparisonReport {
+    name: String,
+    limit: usize,
+    exact_result_count: usize,
+    hnsw_result_count: usize,
+    overlap_count: usize,
+    overlap_ratio: f64,
+    jaccard_ratio: f64,
+    top1_match: bool,
+    exact_only_count: usize,
+    hnsw_only_count: usize,
 }
 
 #[derive(Debug, Serialize)]
@@ -192,6 +207,13 @@ fn run_scale(
     } else {
         None
     };
+    let quality_comparisons = if let (Some(exact_snapshot), Some(hnsw_snapshot)) =
+        (exact_snapshot.as_ref(), hnsw_snapshot.as_ref())
+    {
+        measure_quality_comparisons(exact_snapshot, hnsw_snapshot, &workload)?
+    } else {
+        Vec::new()
+    };
     let mut scenarios = Vec::new();
 
     if scenario_profile.includes_storage_scenarios() {
@@ -249,6 +271,7 @@ fn run_scale(
         peak_rss_bytes: current_process_peak_rss_bytes(),
         storage_footprint,
         vector_index_footprint,
+        quality_comparisons,
         scenarios,
     })
 }
@@ -273,6 +296,7 @@ fn run_streamed_storage_scale(node_count: usize, iterations: usize) -> BenchResu
         peak_rss_bytes: current_process_peak_rss_bytes(),
         storage_footprint,
         vector_index_footprint: None,
+        quality_comparisons: Vec::new(),
         scenarios,
     })
 }
@@ -521,14 +545,7 @@ fn bench_temporal_range(snapshot: &GraphSnapshot) -> BenchResult<()> {
 }
 
 fn bench_vector_search(snapshot: &GraphSnapshot) -> BenchResult<()> {
-    let response = Executor::execute(
-        &QueryRequest::VectorSearch {
-            query_vector: vec![1.0, 0.0, 0.5, 0.25],
-            node_type: Some("memory".to_owned()),
-            limit: 50,
-        },
-        snapshot,
-    )?;
+    let response = execute_vector_search(snapshot)?;
     if response.ranked_results.is_empty() {
         return Err("vector_search benchmark returned no results".into());
     }
@@ -536,7 +553,29 @@ fn bench_vector_search(snapshot: &GraphSnapshot) -> BenchResult<()> {
 }
 
 fn bench_ranked_retrieval(snapshot: &GraphSnapshot, workload: &Workload) -> BenchResult<()> {
-    let response = Executor::execute(
+    let response = execute_ranked_retrieval(snapshot, workload)?;
+    if response.ranked_results.is_empty() {
+        return Err("ranked_retrieval benchmark returned no results".into());
+    }
+    Ok(())
+}
+
+fn execute_vector_search(snapshot: &GraphSnapshot) -> BenchResult<QueryResponse> {
+    Ok(Executor::execute(
+        &QueryRequest::VectorSearch {
+            query_vector: vec![1.0, 0.0, 0.5, 0.25],
+            node_type: Some("memory".to_owned()),
+            limit: 50,
+        },
+        snapshot,
+    )?)
+}
+
+fn execute_ranked_retrieval(
+    snapshot: &GraphSnapshot,
+    workload: &Workload,
+) -> BenchResult<QueryResponse> {
+    Ok(Executor::execute(
         &QueryRequest::RankedRetrieval {
             query_vector: Some(vec![1.0, 0.0, 0.5, 0.25]),
             reference_node_id: Some(workload.start_node_id.clone()),
@@ -548,11 +587,72 @@ fn bench_ranked_retrieval(snapshot: &GraphSnapshot, workload: &Workload) -> Benc
             retrieval_profile: Some("v1-default".to_owned()),
         },
         snapshot,
-    )?;
-    if response.ranked_results.is_empty() {
-        return Err("ranked_retrieval benchmark returned no results".into());
+    )?)
+}
+
+fn measure_quality_comparisons(
+    exact_snapshot: &GraphSnapshot,
+    hnsw_snapshot: &GraphSnapshot,
+    workload: &Workload,
+) -> BenchResult<Vec<QualityComparisonReport>> {
+    let exact_vector = execute_vector_search(exact_snapshot)?;
+    let hnsw_vector = execute_vector_search(hnsw_snapshot)?;
+    let exact_ranked = execute_ranked_retrieval(exact_snapshot, workload)?;
+    let hnsw_ranked = execute_ranked_retrieval(hnsw_snapshot, workload)?;
+
+    Ok(vec![
+        compare_ranked_results(
+            "vector_search",
+            &exact_vector.ranked_results,
+            &hnsw_vector.ranked_results,
+        ),
+        compare_ranked_results(
+            "ranked_retrieval",
+            &exact_ranked.ranked_results,
+            &hnsw_ranked.ranked_results,
+        ),
+    ])
+}
+
+fn compare_ranked_results(
+    name: &str,
+    exact: &[undr9_query::RankedNodeResult],
+    hnsw: &[undr9_query::RankedNodeResult],
+) -> QualityComparisonReport {
+    let exact_ids = exact
+        .iter()
+        .map(|result| result.node.id.clone())
+        .collect::<Vec<_>>();
+    let hnsw_ids = hnsw
+        .iter()
+        .map(|result| result.node.id.clone())
+        .collect::<Vec<_>>();
+    let exact_set = exact_ids.iter().cloned().collect::<BTreeSet<_>>();
+    let hnsw_set = hnsw_ids.iter().cloned().collect::<BTreeSet<_>>();
+    let overlap_count = exact_set.intersection(&hnsw_set).count();
+    let union_count = exact_set.union(&hnsw_set).count();
+    let limit = exact.len().max(hnsw.len());
+
+    QualityComparisonReport {
+        name: name.to_owned(),
+        limit,
+        exact_result_count: exact.len(),
+        hnsw_result_count: hnsw.len(),
+        overlap_count,
+        overlap_ratio: if limit > 0 {
+            overlap_count as f64 / limit as f64
+        } else {
+            0.0
+        },
+        jaccard_ratio: if union_count > 0 {
+            overlap_count as f64 / union_count as f64
+        } else {
+            0.0
+        },
+        top1_match: exact_ids.first() == hnsw_ids.first(),
+        exact_only_count: exact_set.difference(&hnsw_set).count(),
+        hnsw_only_count: hnsw_set.difference(&exact_set).count(),
     }
-    Ok(())
 }
 
 fn measure_storage_footprint(workload: &Workload) -> BenchResult<StorageFootprintReport> {

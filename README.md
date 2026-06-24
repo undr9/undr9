@@ -133,6 +133,8 @@ The following data represents empirical, automated testing evidence verified on 
 
 At `100k`, the published HNSW benchmark artifact also records a persisted vector-index sidecar footprint of `5,892,366` bytes, with `183.85 s` build time and `126.10 s` warm-load time in the current benchmark environment. Larger-scale HNSW latency and footprint evidence is not yet published.
 
+At the same `100k` scale, the current quality artifact shows `vector_search` exact-vs-HNSW top-50 overlap of `1.0` with `top1_match=true`, while `ranked_retrieval` shows top-50 overlap of `0.26` with `top1_match=true`. These are workload-specific measurements from the published benchmark artifact, not a general recall guarantee.
+
 ---
 
 

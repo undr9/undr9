@@ -212,6 +212,7 @@ Benchmark output now records:
 - direct `exact_lookup` and `list_neighbors_1_hop` scenarios in addition to traversal and retrieval paths
 - separate exact and HNSW query timings for `vector_search` and `ranked_retrieval`
 - `vector_index_footprint` with `hnsw_index_bytes`, `hnsw_build_elapsed_us`, and `hnsw_reload_elapsed_us`
+- `quality_comparisons` with exact-vs-HNSW `overlap_ratio`, `jaccard_ratio`, `top1_match`, and result-set difference counts
 
 Vector benchmark behavior:
 
@@ -219,6 +220,12 @@ Vector benchmark behavior:
 - `vector_search_hnsw` and `ranked_retrieval_hnsw` use the HNSW backend
 - the benchmark runner forces `exact_fallback_threshold=1` for HNSW runs so small baseline scales actually exercise the ANN backend
 - this override is benchmark-only and does not change the normal production defaults
+
+Published quality observations from the current `100k` artifact:
+
+- `vector_search` shows `overlap_ratio=1.0`, `jaccard_ratio=1.0`, and `top1_match=true`
+- `ranked_retrieval` shows `overlap_ratio=0.26`, `jaccard_ratio=0.1494`, and `top1_match=true`
+- treat these as workload-specific measurements, not universal recall guarantees
 
 The runner defaults are:
 
