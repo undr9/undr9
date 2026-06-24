@@ -1,4 +1,6 @@
-# UNDR9
+<p align="center">
+  <img src="assets/undr9-landscape.png" alt="UNDR9 header" />
+</p>
 
 Memory is becoming the new database layer for AI.
 Today's agents can reason. Tomorrow's agents must remember.
