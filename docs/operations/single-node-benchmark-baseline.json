@@ -1,16 +1,22 @@
 {
-  "generated_at_ms": 1782295661505,
+  "generated_at_ms": 1782299931902,
   "host_os": "macos",
   "host_arch": "aarch64",
   "timing_unit": "microseconds",
   "iterations": 5,
   "scenario_profile": "full",
   "workload_profile": "standard",
+  "hnsw_tuning": {
+    "semantic_top_k": 250,
+    "ef_search": 128,
+    "m": 16,
+    "ef_construction": 200
+  },
   "scales": [
     {
       "node_count": 1000,
       "edge_count": 999,
-      "peak_rss_bytes": 35766272,
+      "peak_rss_bytes": 34619392,
       "storage_footprint": {
         "wal_bytes": 390622,
         "snapshot_bytes": 0,
@@ -18,13 +24,13 @@
         "index_bytes": 0,
         "total_bytes": 390874,
         "post_compaction_total_bytes": 337925,
-        "compaction_elapsed_us": 16915,
-        "recovery_elapsed_us": 11691
+        "compaction_elapsed_us": 27699,
+        "recovery_elapsed_us": 11524
       },
       "vector_index_footprint": {
-        "hnsw_index_bytes": 68158,
-        "hnsw_build_elapsed_us": 490626,
-        "hnsw_reload_elapsed_us": 16928
+        "hnsw_index_bytes": 68159,
+        "hnsw_build_elapsed_us": 489698,
+        "hnsw_reload_elapsed_us": 17172
       },
       "quality_comparisons": [
         {
@@ -44,65 +50,65 @@
           "limit": 50,
           "exact_result_count": 50,
           "hnsw_result_count": 50,
-          "overlap_count": 25,
-          "overlap_ratio": 0.5,
-          "jaccard_ratio": 0.3333333333333333,
+          "overlap_count": 38,
+          "overlap_ratio": 0.76,
+          "jaccard_ratio": 0.6129032258064516,
           "top1_match": true,
-          "exact_only_count": 25,
-          "hnsw_only_count": 25
+          "exact_only_count": 12,
+          "hnsw_only_count": 12
         }
       ],
       "scenarios": [
         {
           "name": "storage_upsert",
           "samples_us": [
-            41150,
-            44276,
-            44585,
-            44758,
-            45133
+            42850,
+            44126,
+            44331,
+            44494,
+            45892
           ],
-          "min_us": 41150,
-          "p50_us": 44585,
-          "p95_us": 45133,
-          "p99_us": 45133,
-          "max_us": 45133,
-          "mean_us": 43980.4,
-          "throughput_ops_per_sec": 22.73740120599176
+          "min_us": 42850,
+          "p50_us": 44331,
+          "p95_us": 45892,
+          "p99_us": 45892,
+          "max_us": 45892,
+          "mean_us": 44338.6,
+          "throughput_ops_per_sec": 22.5537116643286
         },
         {
           "name": "storage_delete",
           "samples_us": [
-            56105,
-            56955,
-            57261,
-            58634,
-            58769
+            54728,
+            56041,
+            57082,
+            58111,
+            60148
           ],
-          "min_us": 56105,
-          "p50_us": 57261,
-          "p95_us": 58769,
-          "p99_us": 58769,
-          "max_us": 58769,
-          "mean_us": 57544.8,
-          "throughput_ops_per_sec": 17.377764802380057
+          "min_us": 54728,
+          "p50_us": 57082,
+          "p95_us": 60148,
+          "p99_us": 60148,
+          "max_us": 60148,
+          "mean_us": 57222.0,
+          "throughput_ops_per_sec": 17.475796022508824
         },
         {
           "name": "wal_recovery",
           "samples_us": [
-            85531,
-            86196,
-            86390,
-            86795,
-            87286
+            87294,
+            87368,
+            87634,
+            87882,
+            88135
           ],
-          "min_us": 85531,
-          "p50_us": 86390,
-          "p95_us": 87286,
-          "p99_us": 87286,
-          "max_us": 87286,
-          "mean_us": 86439.6,
-          "throughput_ops_per_sec": 11.568771720368904
+          "min_us": 87294,
+          "p50_us": 87634,
+          "p95_us": 88135,
+          "p99_us": 88135,
+          "max_us": 88135,
+          "mean_us": 87662.6,
+          "throughput_ops_per_sec": 11.407373269786659
         },
         {
           "name": "exact_lookup",
@@ -124,162 +130,162 @@
         {
           "name": "list_neighbors_1_hop",
           "samples_us": [
+            4,
             5,
             5,
             5,
-            6,
-            28
+            27
           ],
-          "min_us": 5,
+          "min_us": 4,
           "p50_us": 5,
-          "p95_us": 28,
-          "p99_us": 28,
-          "max_us": 28,
-          "mean_us": 9.8,
-          "throughput_ops_per_sec": 102040.8163265306
+          "p95_us": 27,
+          "p99_us": 27,
+          "max_us": 27,
+          "mean_us": 9.2,
+          "throughput_ops_per_sec": 108695.65217391305
         },
         {
           "name": "label_scan",
           "samples_us": [
-            1308,
-            1310,
-            1314,
-            1319,
-            1417
+            1284,
+            1285,
+            1287,
+            1301,
+            1390
           ],
-          "min_us": 1308,
-          "p50_us": 1314,
-          "p95_us": 1417,
-          "p99_us": 1417,
-          "max_us": 1417,
-          "mean_us": 1333.6,
-          "throughput_ops_per_sec": 749.8500299940013
+          "min_us": 1284,
+          "p50_us": 1287,
+          "p95_us": 1390,
+          "p99_us": 1390,
+          "max_us": 1390,
+          "mean_us": 1309.4,
+          "throughput_ops_per_sec": 763.708568810142
         },
         {
           "name": "traverse_5_hops",
           "samples_us": [
+            33,
+            33,
             34,
-            34,
-            36,
-            37,
+            35,
             68
           ],
-          "min_us": 34,
-          "p50_us": 36,
+          "min_us": 33,
+          "p50_us": 34,
           "p95_us": 68,
           "p99_us": 68,
           "max_us": 68,
-          "mean_us": 41.8,
-          "throughput_ops_per_sec": 23923.444976076556
+          "mean_us": 40.6,
+          "throughput_ops_per_sec": 24630.54187192118
         },
         {
           "name": "shortest_path",
           "samples_us": [
+            179,
+            181,
+            182,
             186,
-            190,
-            191,
-            200,
-            262
+            249
           ],
-          "min_us": 186,
-          "p50_us": 191,
-          "p95_us": 262,
-          "p99_us": 262,
-          "max_us": 262,
-          "mean_us": 205.8,
-          "throughput_ops_per_sec": 4859.086491739553
+          "min_us": 179,
+          "p50_us": 182,
+          "p95_us": 249,
+          "p99_us": 249,
+          "max_us": 249,
+          "mean_us": 195.4,
+          "throughput_ops_per_sec": 5117.707267144319
         },
         {
           "name": "temporal_range",
           "samples_us": [
-            1797,
-            1806,
-            1807,
-            1816,
-            1818
+            1741,
+            1753,
+            1756,
+            1760,
+            1769
           ],
-          "min_us": 1797,
-          "p50_us": 1807,
-          "p95_us": 1818,
-          "p99_us": 1818,
-          "max_us": 1818,
-          "mean_us": 1808.8,
-          "throughput_ops_per_sec": 552.8527200353826
+          "min_us": 1741,
+          "p50_us": 1756,
+          "p95_us": 1769,
+          "p99_us": 1769,
+          "max_us": 1769,
+          "mean_us": 1755.8,
+          "throughput_ops_per_sec": 569.5409499943046
         },
         {
           "name": "vector_search_exact",
           "samples_us": [
-            3478,
-            3478,
-            3480,
-            3511,
-            3585
+            3431,
+            3431,
+            3460,
+            3463,
+            3509
           ],
-          "min_us": 3478,
-          "p50_us": 3480,
-          "p95_us": 3585,
-          "p99_us": 3585,
-          "max_us": 3585,
-          "mean_us": 3506.4,
-          "throughput_ops_per_sec": 285.19279032626054
+          "min_us": 3431,
+          "p50_us": 3460,
+          "p95_us": 3509,
+          "p99_us": 3509,
+          "max_us": 3509,
+          "mean_us": 3458.8,
+          "throughput_ops_per_sec": 289.1176130449867
         },
         {
           "name": "ranked_retrieval_exact",
           "samples_us": [
-            3668,
-            3671,
-            3685,
-            3702,
-            3705
+            3659,
+            3667,
+            3674,
+            3695,
+            3711
           ],
-          "min_us": 3668,
-          "p50_us": 3685,
-          "p95_us": 3705,
-          "p99_us": 3705,
-          "max_us": 3705,
-          "mean_us": 3686.2,
-          "throughput_ops_per_sec": 271.2820791058543
+          "min_us": 3659,
+          "p50_us": 3674,
+          "p95_us": 3711,
+          "p99_us": 3711,
+          "max_us": 3711,
+          "mean_us": 3681.2,
+          "throughput_ops_per_sec": 271.65054873410844
         },
         {
           "name": "vector_search_hnsw",
           "samples_us": [
-            1017,
-            1025,
-            1031,
-            1048,
-            1173
+            1895,
+            1899,
+            1909,
+            1909,
+            2143
           ],
-          "min_us": 1017,
-          "p50_us": 1031,
-          "p95_us": 1173,
-          "p99_us": 1173,
-          "max_us": 1173,
-          "mean_us": 1058.8,
-          "throughput_ops_per_sec": 944.4654325651682
+          "min_us": 1895,
+          "p50_us": 1909,
+          "p95_us": 2143,
+          "p99_us": 2143,
+          "max_us": 2143,
+          "mean_us": 1951.0,
+          "throughput_ops_per_sec": 512.557662737058
         },
         {
           "name": "ranked_retrieval_hnsw",
           "samples_us": [
-            702,
-            704,
-            704,
-            718,
-            739
+            1439,
+            1441,
+            1445,
+            1470,
+            1472
           ],
-          "min_us": 702,
-          "p50_us": 704,
-          "p95_us": 739,
-          "p99_us": 739,
-          "max_us": 739,
-          "mean_us": 713.4,
-          "throughput_ops_per_sec": 1401.7381553125877
+          "min_us": 1439,
+          "p50_us": 1445,
+          "p95_us": 1472,
+          "p99_us": 1472,
+          "max_us": 1472,
+          "mean_us": 1453.4,
+          "throughput_ops_per_sec": 688.041832943443
         }
       ]
     },
     {
       "node_count": 5000,
       "edge_count": 4999,
-      "peak_rss_bytes": 125730816,
+      "peak_rss_bytes": 126533632,
       "storage_footprint": {
         "wal_bytes": 1981936,
         "snapshot_bytes": 0,
@@ -287,13 +293,13 @@
         "index_bytes": 0,
         "total_bytes": 1982188,
         "post_compaction_total_bytes": 1733919,
-        "compaction_elapsed_us": 51623,
-        "recovery_elapsed_us": 57691
+        "compaction_elapsed_us": 49849,
+        "recovery_elapsed_us": 57485
       },
       "vector_index_footprint": {
-        "hnsw_index_bytes": 330252,
-        "hnsw_build_elapsed_us": 3004805,
-        "hnsw_reload_elapsed_us": 229296
+        "hnsw_index_bytes": 330253,
+        "hnsw_build_elapsed_us": 3009484,
+        "hnsw_reload_elapsed_us": 231293
       },
       "quality_comparisons": [
         {
@@ -313,65 +319,65 @@
           "limit": 50,
           "exact_result_count": 50,
           "hnsw_result_count": 50,
-          "overlap_count": 14,
-          "overlap_ratio": 0.28,
-          "jaccard_ratio": 0.16279069767441862,
+          "overlap_count": 33,
+          "overlap_ratio": 0.66,
+          "jaccard_ratio": 0.4925373134328358,
           "top1_match": true,
-          "exact_only_count": 36,
-          "hnsw_only_count": 36
+          "exact_only_count": 17,
+          "hnsw_only_count": 17
         }
       ],
       "scenarios": [
         {
           "name": "storage_upsert",
           "samples_us": [
-            190358,
-            190911,
-            191669,
-            191951,
-            192838
+            188653,
+            190379,
+            190896,
+            190900,
+            192258
           ],
-          "min_us": 190358,
-          "p50_us": 191669,
-          "p95_us": 192838,
-          "p99_us": 192838,
-          "max_us": 192838,
-          "mean_us": 191545.4,
-          "throughput_ops_per_sec": 5.2206944150055286
+          "min_us": 188653,
+          "p50_us": 190896,
+          "p95_us": 192258,
+          "p99_us": 192258,
+          "max_us": 192258,
+          "mean_us": 190617.2,
+          "throughput_ops_per_sec": 5.246116300103034
         },
         {
           "name": "storage_delete",
           "samples_us": [
-            231314,
-            232846,
-            234133,
-            236672,
-            264496
+            228340,
+            229003,
+            229151,
+            230206,
+            232736
           ],
-          "min_us": 231314,
-          "p50_us": 234133,
-          "p95_us": 264496,
-          "p99_us": 264496,
-          "max_us": 264496,
-          "mean_us": 239892.2,
-          "throughput_ops_per_sec": 4.168539035450089
+          "min_us": 228340,
+          "p50_us": 229151,
+          "p95_us": 232736,
+          "p99_us": 232736,
+          "max_us": 232736,
+          "mean_us": 229887.2,
+          "throughput_ops_per_sec": 4.349959458377848
         },
         {
           "name": "wal_recovery",
           "samples_us": [
-            411666,
-            424121,
-            429282,
-            430130,
-            459668
+            408449,
+            409059,
+            409143,
+            409974,
+            410567
           ],
-          "min_us": 411666,
-          "p50_us": 429282,
-          "p95_us": 459668,
-          "p99_us": 459668,
-          "max_us": 459668,
-          "mean_us": 430973.4,
-          "throughput_ops_per_sec": 2.320328818437518
+          "min_us": 408449,
+          "p50_us": 409143,
+          "p95_us": 410567,
+          "p99_us": 410567,
+          "max_us": 410567,
+          "mean_us": 409438.4,
+          "throughput_ops_per_sec": 2.442369841226421
         },
         {
           "name": "exact_lookup",
@@ -380,15 +386,15 @@
             2,
             2,
             2,
-            22
+            19
           ],
           "min_us": 2,
           "p50_us": 2,
-          "p95_us": 22,
-          "p99_us": 22,
-          "max_us": 22,
-          "mean_us": 6.0,
-          "throughput_ops_per_sec": 166666.66666666666
+          "p95_us": 19,
+          "p99_us": 19,
+          "max_us": 19,
+          "mean_us": 5.4,
+          "throughput_ops_per_sec": 185185.18518518517
         },
         {
           "name": "list_neighbors_1_hop",
@@ -397,158 +403,158 @@
             5,
             5,
             6,
-            32
+            29
           ],
           "min_us": 5,
           "p50_us": 5,
-          "p95_us": 32,
-          "p99_us": 32,
-          "max_us": 32,
-          "mean_us": 10.6,
-          "throughput_ops_per_sec": 94339.62264150944
+          "p95_us": 29,
+          "p99_us": 29,
+          "max_us": 29,
+          "mean_us": 10.0,
+          "throughput_ops_per_sec": 100000.0
         },
         {
           "name": "label_scan",
           "samples_us": [
-            1939,
-            1949,
-            1952,
-            1998,
-            2359
+            1922,
+            1935,
+            1938,
+            1941,
+            2362
           ],
-          "min_us": 1939,
-          "p50_us": 1952,
-          "p95_us": 2359,
-          "p99_us": 2359,
-          "max_us": 2359,
-          "mean_us": 2039.4,
-          "throughput_ops_per_sec": 490.34029616553886
+          "min_us": 1922,
+          "p50_us": 1938,
+          "p95_us": 2362,
+          "p99_us": 2362,
+          "max_us": 2362,
+          "mean_us": 2019.6,
+          "throughput_ops_per_sec": 495.1475539710834
         },
         {
           "name": "traverse_5_hops",
           "samples_us": [
+            35,
             36,
             36,
-            37,
-            39,
-            82
+            38,
+            99
           ],
-          "min_us": 36,
-          "p50_us": 37,
-          "p95_us": 82,
-          "p99_us": 82,
-          "max_us": 82,
-          "mean_us": 46.0,
-          "throughput_ops_per_sec": 21739.130434782608
+          "min_us": 35,
+          "p50_us": 36,
+          "p95_us": 99,
+          "p99_us": 99,
+          "max_us": 99,
+          "mean_us": 48.8,
+          "throughput_ops_per_sec": 20491.803278688527
         },
         {
           "name": "shortest_path",
           "samples_us": [
-            196,
             198,
-            200,
+            202,
             203,
-            293
+            220,
+            328
           ],
-          "min_us": 196,
-          "p50_us": 200,
-          "p95_us": 293,
-          "p99_us": 293,
-          "max_us": 293,
-          "mean_us": 218.0,
-          "throughput_ops_per_sec": 4587.155963302752
+          "min_us": 198,
+          "p50_us": 203,
+          "p95_us": 328,
+          "p99_us": 328,
+          "max_us": 328,
+          "mean_us": 230.2,
+          "throughput_ops_per_sec": 4344.0486533449175
         },
         {
           "name": "temporal_range",
           "samples_us": [
-            1903,
-            1905,
-            1926,
-            1929,
-            1962
+            1881,
+            1889,
+            1890,
+            1893,
+            1939
           ],
-          "min_us": 1903,
-          "p50_us": 1926,
-          "p95_us": 1962,
-          "p99_us": 1962,
-          "max_us": 1962,
-          "mean_us": 1925.0,
-          "throughput_ops_per_sec": 519.4805194805194
+          "min_us": 1881,
+          "p50_us": 1890,
+          "p95_us": 1939,
+          "p99_us": 1939,
+          "max_us": 1939,
+          "mean_us": 1898.4,
+          "throughput_ops_per_sec": 526.7593763168984
         },
         {
           "name": "vector_search_exact",
           "samples_us": [
-            17304,
-            17323,
-            17483,
-            18303,
-            18566
+            16802,
+            16846,
+            16854,
+            17390,
+            17624
           ],
-          "min_us": 17304,
-          "p50_us": 17483,
-          "p95_us": 18566,
-          "p99_us": 18566,
-          "max_us": 18566,
-          "mean_us": 17795.8,
-          "throughput_ops_per_sec": 56.193034311466754
+          "min_us": 16802,
+          "p50_us": 16854,
+          "p95_us": 17624,
+          "p99_us": 17624,
+          "max_us": 17624,
+          "mean_us": 17103.2,
+          "throughput_ops_per_sec": 58.46859067309041
         },
         {
           "name": "ranked_retrieval_exact",
           "samples_us": [
-            18158,
-            18164,
-            18279,
-            18385,
-            18716
+            18181,
+            18202,
+            18291,
+            18410,
+            18437
           ],
-          "min_us": 18158,
-          "p50_us": 18279,
-          "p95_us": 18716,
-          "p99_us": 18716,
-          "max_us": 18716,
-          "mean_us": 18340.4,
-          "throughput_ops_per_sec": 54.52443785304573
+          "min_us": 18181,
+          "p50_us": 18291,
+          "p95_us": 18437,
+          "p99_us": 18437,
+          "max_us": 18437,
+          "mean_us": 18304.2,
+          "throughput_ops_per_sec": 54.632270189355445
         },
         {
           "name": "vector_search_hnsw",
           "samples_us": [
-            1809,
-            1816,
-            1832,
-            1856,
-            2285
+            2874,
+            2877,
+            2908,
+            2911,
+            3352
           ],
-          "min_us": 1809,
-          "p50_us": 1832,
-          "p95_us": 2285,
-          "p99_us": 2285,
-          "max_us": 2285,
-          "mean_us": 1919.6,
-          "throughput_ops_per_sec": 520.9418628881017
+          "min_us": 2874,
+          "p50_us": 2908,
+          "p95_us": 3352,
+          "p99_us": 3352,
+          "max_us": 3352,
+          "mean_us": 2984.4,
+          "throughput_ops_per_sec": 335.07572711432783
         },
         {
           "name": "ranked_retrieval_hnsw",
           "samples_us": [
-            739,
-            745,
-            751,
-            754,
-            792
+            1559,
+            1569,
+            1571,
+            1572,
+            1632
           ],
-          "min_us": 739,
-          "p50_us": 751,
-          "p95_us": 792,
-          "p99_us": 792,
-          "max_us": 792,
-          "mean_us": 756.2,
-          "throughput_ops_per_sec": 1322.4014810896588
+          "min_us": 1559,
+          "p50_us": 1571,
+          "p95_us": 1632,
+          "p99_us": 1632,
+          "max_us": 1632,
+          "mean_us": 1580.6,
+          "throughput_ops_per_sec": 632.6711375427053
         }
       ]
     },
     {
       "node_count": 10000,
       "edge_count": 9999,
-      "peak_rss_bytes": 248774656,
+      "peak_rss_bytes": 228622336,
       "storage_footprint": {
         "wal_bytes": 3972087,
         "snapshot_bytes": 0,
@@ -556,13 +562,13 @@
         "index_bytes": 0,
         "total_bytes": 3972339,
         "post_compaction_total_bytes": 3478921,
-        "compaction_elapsed_us": 96685,
-        "recovery_elapsed_us": 116697
+        "compaction_elapsed_us": 98544,
+        "recovery_elapsed_us": 117482
       },
       "vector_index_footprint": {
-        "hnsw_index_bytes": 646410,
-        "hnsw_build_elapsed_us": 6708682,
-        "hnsw_reload_elapsed_us": 898646
+        "hnsw_index_bytes": 646411,
+        "hnsw_build_elapsed_us": 6714498,
+        "hnsw_reload_elapsed_us": 938318
       },
       "quality_comparisons": [
         {
@@ -582,65 +588,65 @@
           "limit": 50,
           "exact_result_count": 50,
           "hnsw_result_count": 50,
-          "overlap_count": 14,
-          "overlap_ratio": 0.28,
-          "jaccard_ratio": 0.16279069767441862,
+          "overlap_count": 29,
+          "overlap_ratio": 0.58,
+          "jaccard_ratio": 0.4084507042253521,
           "top1_match": true,
-          "exact_only_count": 36,
-          "hnsw_only_count": 36
+          "exact_only_count": 21,
+          "hnsw_only_count": 21
         }
       ],
       "scenarios": [
         {
           "name": "storage_upsert",
           "samples_us": [
-            380965,
-            383465,
-            385278,
-            385322,
-            387141
+            375364,
+            375777,
+            377741,
+            381681,
+            383014
           ],
-          "min_us": 380965,
-          "p50_us": 385278,
-          "p95_us": 387141,
-          "p99_us": 387141,
-          "max_us": 387141,
-          "mean_us": 384434.2,
-          "throughput_ops_per_sec": 2.6012253852544855
+          "min_us": 375364,
+          "p50_us": 377741,
+          "p95_us": 383014,
+          "p99_us": 383014,
+          "max_us": 383014,
+          "mean_us": 378715.4,
+          "throughput_ops_per_sec": 2.6405052448355675
         },
         {
           "name": "storage_delete",
           "samples_us": [
-            463232,
-            463896,
-            464119,
-            464628,
-            467286
+            457865,
+            462061,
+            462166,
+            462417,
+            488243
           ],
-          "min_us": 463232,
-          "p50_us": 464119,
-          "p95_us": 467286,
-          "p99_us": 467286,
-          "max_us": 467286,
-          "mean_us": 464632.2,
-          "throughput_ops_per_sec": 2.152239986811073
+          "min_us": 457865,
+          "p50_us": 462166,
+          "p95_us": 488243,
+          "p99_us": 488243,
+          "max_us": 488243,
+          "mean_us": 466550.4,
+          "throughput_ops_per_sec": 2.1433911534530887
         },
         {
           "name": "wal_recovery",
           "samples_us": [
-            821400,
-            824026,
-            824902,
-            825076,
-            828071
+            822200,
+            825280,
+            829461,
+            846334,
+            851935
           ],
-          "min_us": 821400,
-          "p50_us": 824902,
-          "p95_us": 828071,
-          "p99_us": 828071,
-          "max_us": 828071,
-          "mean_us": 824695.0,
-          "throughput_ops_per_sec": 1.2125694953892046
+          "min_us": 822200,
+          "p50_us": 829461,
+          "p95_us": 851935,
+          "p99_us": 851935,
+          "max_us": 851935,
+          "mean_us": 835042.0,
+          "throughput_ops_per_sec": 1.1975445546451555
         },
         {
           "name": "exact_lookup",
@@ -648,16 +654,16 @@
             2,
             2,
             2,
-            2,
-            22
+            3,
+            42
           ],
           "min_us": 2,
           "p50_us": 2,
-          "p95_us": 22,
-          "p99_us": 22,
-          "max_us": 22,
-          "mean_us": 6.0,
-          "throughput_ops_per_sec": 166666.66666666666
+          "p95_us": 42,
+          "p99_us": 42,
+          "max_us": 42,
+          "mean_us": 10.2,
+          "throughput_ops_per_sec": 98039.21568627452
         },
         {
           "name": "list_neighbors_1_hop",
@@ -666,151 +672,151 @@
             5,
             5,
             6,
-            30
+            37
           ],
           "min_us": 5,
           "p50_us": 5,
-          "p95_us": 30,
-          "p99_us": 30,
-          "max_us": 30,
-          "mean_us": 10.2,
-          "throughput_ops_per_sec": 98039.21568627452
+          "p95_us": 37,
+          "p99_us": 37,
+          "max_us": 37,
+          "mean_us": 11.6,
+          "throughput_ops_per_sec": 86206.89655172414
         },
         {
           "name": "label_scan",
           "samples_us": [
-            2342,
-            2364,
-            2398,
-            2629,
-            2975
+            2286,
+            2295,
+            2362,
+            2368,
+            3684
           ],
-          "min_us": 2342,
-          "p50_us": 2398,
-          "p95_us": 2975,
-          "p99_us": 2975,
-          "max_us": 2975,
-          "mean_us": 2541.6,
-          "throughput_ops_per_sec": 393.45294302801386
+          "min_us": 2286,
+          "p50_us": 2362,
+          "p95_us": 3684,
+          "p99_us": 3684,
+          "max_us": 3684,
+          "mean_us": 2599.0,
+          "throughput_ops_per_sec": 384.7633705271258
         },
         {
           "name": "traverse_5_hops",
           "samples_us": [
             36,
-            36,
             37,
-            39,
-            96
+            37,
+            44,
+            185
           ],
           "min_us": 36,
           "p50_us": 37,
-          "p95_us": 96,
-          "p99_us": 96,
-          "max_us": 96,
-          "mean_us": 48.8,
-          "throughput_ops_per_sec": 20491.803278688527
+          "p95_us": 185,
+          "p99_us": 185,
+          "max_us": 185,
+          "mean_us": 67.8,
+          "throughput_ops_per_sec": 14749.262536873157
         },
         {
           "name": "shortest_path",
           "samples_us": [
-            202,
+            201,
             203,
             205,
-            207,
-            324
+            209,
+            555
           ],
-          "min_us": 202,
+          "min_us": 201,
           "p50_us": 205,
-          "p95_us": 324,
-          "p99_us": 324,
-          "max_us": 324,
-          "mean_us": 228.2,
-          "throughput_ops_per_sec": 4382.120946538124
+          "p95_us": 555,
+          "p99_us": 555,
+          "max_us": 555,
+          "mean_us": 274.6,
+          "throughput_ops_per_sec": 3641.6605972323378
         },
         {
           "name": "temporal_range",
           "samples_us": [
-            1902,
-            1906,
-            1911,
-            1972,
-            2229
+            1920,
+            1922,
+            1932,
+            1997,
+            2020
           ],
-          "min_us": 1902,
-          "p50_us": 1911,
-          "p95_us": 2229,
-          "p99_us": 2229,
-          "max_us": 2229,
-          "mean_us": 1984.0,
-          "throughput_ops_per_sec": 504.03225806451616
+          "min_us": 1920,
+          "p50_us": 1932,
+          "p95_us": 2020,
+          "p99_us": 2020,
+          "max_us": 2020,
+          "mean_us": 1958.2,
+          "throughput_ops_per_sec": 510.673067102441
         },
         {
           "name": "vector_search_exact",
           "samples_us": [
-            34297,
-            34788,
-            34847,
-            35090,
-            35117
+            34931,
+            35525,
+            35548,
+            35562,
+            35841
           ],
-          "min_us": 34297,
-          "p50_us": 34847,
-          "p95_us": 35117,
-          "p99_us": 35117,
-          "max_us": 35117,
-          "mean_us": 34827.8,
-          "throughput_ops_per_sec": 28.712695030980996
+          "min_us": 34931,
+          "p50_us": 35548,
+          "p95_us": 35841,
+          "p99_us": 35841,
+          "max_us": 35841,
+          "mean_us": 35481.4,
+          "throughput_ops_per_sec": 28.183780797826465
         },
         {
           "name": "ranked_retrieval_exact",
           "samples_us": [
-            37247,
-            37379,
-            37382,
-            37413,
-            37464
+            37206,
+            37493,
+            37685,
+            37956,
+            38402
           ],
-          "min_us": 37247,
-          "p50_us": 37382,
-          "p95_us": 37464,
-          "p99_us": 37464,
-          "max_us": 37464,
-          "mean_us": 37377.0,
-          "throughput_ops_per_sec": 26.754421168098027
+          "min_us": 37206,
+          "p50_us": 37685,
+          "p95_us": 38402,
+          "p99_us": 38402,
+          "max_us": 38402,
+          "mean_us": 37748.4,
+          "throughput_ops_per_sec": 26.491189030528446
         },
         {
           "name": "vector_search_hnsw",
           "samples_us": [
-            2736,
-            2737,
-            2744,
-            2758,
-            3092
+            3783,
+            3818,
+            3904,
+            3929,
+            4334
           ],
-          "min_us": 2736,
-          "p50_us": 2744,
-          "p95_us": 3092,
-          "p99_us": 3092,
-          "max_us": 3092,
-          "mean_us": 2813.4,
-          "throughput_ops_per_sec": 355.44181417501954
+          "min_us": 3783,
+          "p50_us": 3904,
+          "p95_us": 4334,
+          "p99_us": 4334,
+          "max_us": 4334,
+          "mean_us": 3953.6,
+          "throughput_ops_per_sec": 252.9340348037232
         },
         {
           "name": "ranked_retrieval_hnsw",
           "samples_us": [
-            775,
-            807,
-            812,
-            843,
-            860
+            1598,
+            1602,
+            1615,
+            1638,
+            1665
           ],
-          "min_us": 775,
-          "p50_us": 812,
-          "p95_us": 860,
-          "p99_us": 860,
-          "max_us": 860,
-          "mean_us": 819.4,
-          "throughput_ops_per_sec": 1220.40517451794
+          "min_us": 1598,
+          "p50_us": 1615,
+          "p95_us": 1665,
+          "p99_us": 1665,
+          "max_us": 1665,
+          "mean_us": 1623.6,
+          "throughput_ops_per_sec": 615.9152500615916
         }
       ]
     }

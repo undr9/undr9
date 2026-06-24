@@ -36,6 +36,14 @@ struct Args {
     scenario_profile: String,
     #[arg(long, default_value = "standard")]
     workload_profile: String,
+    #[arg(long)]
+    hnsw_semantic_top_k: Option<usize>,
+    #[arg(long)]
+    hnsw_ef_search: Option<usize>,
+    #[arg(long)]
+    hnsw_m: Option<usize>,
+    #[arg(long)]
+    hnsw_ef_construction: Option<usize>,
 }
 
 #[derive(Debug, Serialize)]
@@ -47,6 +55,7 @@ struct BenchmarkReport {
     iterations: usize,
     scenario_profile: String,
     workload_profile: String,
+    hnsw_tuning: HnswTuningReport,
     scales: Vec<ScaleReport>,
 }
 
@@ -78,6 +87,14 @@ struct VectorIndexFootprintReport {
     hnsw_index_bytes: u64,
     hnsw_build_elapsed_us: u128,
     hnsw_reload_elapsed_us: u128,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct HnswTuningReport {
+    semantic_top_k: usize,
+    ef_search: usize,
+    m: usize,
+    ef_construction: usize,
 }
 
 #[derive(Debug, Serialize)]
@@ -112,6 +129,7 @@ fn main() -> BenchResult<()> {
     let scales = parse_scales(&args.scales)?;
     let scenario_profile = parse_scenario_profile(&args.scenario_profile)?;
     let workload_profile = parse_workload_profile(&args.workload_profile)?;
+    let hnsw_tuning = benchmark_hnsw_tuning_from_args(&args);
     let mut reports = Vec::new();
 
     for node_count in scales {
@@ -120,6 +138,7 @@ fn main() -> BenchResult<()> {
             args.iterations,
             scenario_profile,
             workload_profile,
+            &hnsw_tuning,
         )?);
     }
 
@@ -131,6 +150,7 @@ fn main() -> BenchResult<()> {
         iterations: args.iterations,
         scenario_profile: scenario_profile.as_str().to_owned(),
         workload_profile: workload_profile.as_str().to_owned(),
+        hnsw_tuning: hnsw_tuning.clone(),
         scales: reports,
     };
 
@@ -182,6 +202,7 @@ fn run_scale(
     iterations: usize,
     scenario_profile: ScenarioProfile,
     workload_profile: WorkloadProfile,
+    hnsw_tuning: &HnswTuningReport,
 ) -> BenchResult<ScaleReport> {
     if matches!(scenario_profile, ScenarioProfile::StorageOnly)
         && matches!(workload_profile, WorkloadProfile::Compact)
@@ -197,13 +218,17 @@ fn run_scale(
     };
     let hnsw_snapshot =
         if scenario_profile.includes_query_scenarios() && workload_profile.includes_vectors() {
-            Some(workload.snapshot_with_vector_index_config(&benchmark_hnsw_vector_index_config()))
+            Some(
+                workload.snapshot_with_vector_index_config(&benchmark_hnsw_vector_index_config(
+                    hnsw_tuning,
+                )),
+            )
         } else {
             None
         };
     let storage_footprint = measure_storage_footprint(&workload)?;
     let vector_index_footprint = if workload_profile.includes_vectors() {
-        Some(measure_vector_index_footprint(&workload)?)
+        Some(measure_vector_index_footprint(&workload, hnsw_tuning)?)
     } else {
         None
     };
@@ -969,15 +994,22 @@ fn benchmark_exact_vector_index_config() -> VectorIndexConfig {
     config
 }
 
-fn benchmark_hnsw_vector_index_config() -> VectorIndexConfig {
+fn benchmark_hnsw_vector_index_config(hnsw_tuning: &HnswTuningReport) -> VectorIndexConfig {
     let mut config = VectorIndexConfig::default();
     config.backend = VectorIndexBackendConfig::Hnsw;
     // Force the benchmark to exercise the ANN backend even at small baseline scales.
     config.exact_fallback_threshold = 1;
+    config.semantic_top_k = hnsw_tuning.semantic_top_k;
+    config.hnsw_ef_search = hnsw_tuning.ef_search;
+    config.hnsw_m = hnsw_tuning.m;
+    config.hnsw_ef_construction = hnsw_tuning.ef_construction;
     config
 }
 
-fn measure_vector_index_footprint(workload: &Workload) -> BenchResult<VectorIndexFootprintReport> {
+fn measure_vector_index_footprint(
+    workload: &Workload,
+    hnsw_tuning: &HnswTuningReport,
+) -> BenchResult<VectorIndexFootprintReport> {
     let tempdir = tempdir()?;
     let config = benchmark_storage_config(tempdir.path().join("data"));
     let mut engine = StorageEngine::open(&config)?;
@@ -985,7 +1017,7 @@ fn measure_vector_index_footprint(workload: &Workload) -> BenchResult<VectorInde
     engine.upsert_edges(workload.edges.clone())?;
 
     let layout = engine.layout().clone();
-    let vector_index_config = benchmark_hnsw_vector_index_config();
+    let vector_index_config = benchmark_hnsw_vector_index_config(hnsw_tuning);
 
     let build_started = Instant::now();
     let index =
@@ -1025,6 +1057,30 @@ fn measure_vector_index_footprint(workload: &Workload) -> BenchResult<VectorInde
         hnsw_build_elapsed_us,
         hnsw_reload_elapsed_us,
     })
+}
+
+fn benchmark_hnsw_tuning_from_args(args: &Args) -> HnswTuningReport {
+    let defaults = benchmark_default_hnsw_tuning();
+    HnswTuningReport {
+        semantic_top_k: args.hnsw_semantic_top_k.unwrap_or(defaults.semantic_top_k),
+        ef_search: args.hnsw_ef_search.unwrap_or(defaults.ef_search),
+        m: args.hnsw_m.unwrap_or(defaults.m),
+        ef_construction: args
+            .hnsw_ef_construction
+            .unwrap_or(defaults.ef_construction),
+    }
+}
+
+fn benchmark_default_hnsw_tuning() -> HnswTuningReport {
+    let defaults = VectorIndexConfig::default();
+    HnswTuningReport {
+        // Benchmarks use a wider semantic pool than the product defaults so published
+        // exact-vs-HNSW claims reflect a better latency/overlap tradeoff.
+        semantic_top_k: 250,
+        ef_search: 128,
+        m: defaults.hnsw_m,
+        ef_construction: defaults.hnsw_ef_construction,
+    }
 }
 
 fn parse_scenario_profile(raw: &str) -> BenchResult<ScenarioProfile> {

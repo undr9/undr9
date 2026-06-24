@@ -219,12 +219,13 @@ Vector benchmark behavior:
 - `vector_search_exact` and `ranked_retrieval_exact` use the exact backend
 - `vector_search_hnsw` and `ranked_retrieval_hnsw` use the HNSW backend
 - the benchmark runner forces `exact_fallback_threshold=1` for HNSW runs so small baseline scales actually exercise the ANN backend
+- the current published benchmark defaults use `semantic_top_k=250` and `ef_search=128`
 - this override is benchmark-only and does not change the normal production defaults
 
 Published quality observations from the current `100k` artifact:
 
 - `vector_search` shows `overlap_ratio=1.0`, `jaccard_ratio=1.0`, and `top1_match=true`
-- `ranked_retrieval` shows `overlap_ratio=0.26`, `jaccard_ratio=0.1494`, and `top1_match=true`
+- `ranked_retrieval` shows `overlap_ratio=0.56`, `jaccard_ratio=0.3889`, and `top1_match=true`
 - treat these as workload-specific measurements, not universal recall guarantees
 
 The runner defaults are:
@@ -235,7 +236,7 @@ iterations=5
 ```
 
 Override them with `UNDR9_BENCH_SCALES`, `UNDR9_BENCH_ITERATIONS`, and `UNDR9_BENCH_OUTPUT` when publishing a different envelope.
-The standard runner also accepts `UNDR9_BENCH_SCENARIO_PROFILE` and `UNDR9_BENCH_WORKLOAD_PROFILE`.
+The standard runner also accepts `UNDR9_BENCH_SCENARIO_PROFILE`, `UNDR9_BENCH_WORKLOAD_PROFILE`, `UNDR9_BENCH_HNSW_SEMANTIC_TOP_K`, `UNDR9_BENCH_HNSW_EF_SEARCH`, `UNDR9_BENCH_HNSW_M`, and `UNDR9_BENCH_HNSW_EF_CONSTRUCTION`.
 
 Published artifacts:
 
