@@ -117,7 +117,7 @@ impl Default for AppConfig {
                 max_edge_count: 10_000_000,
             },
             vector_index: VectorIndexConfig {
-                backend: VectorIndexBackendConfig::Exact,
+                backend: VectorIndexBackendConfig::Hnsw,
                 exact_fallback_threshold: 50_000,
                 semantic_top_k: 100,
                 hnsw_m: 16,
@@ -483,7 +483,7 @@ impl AppConfig {
 impl Default for VectorIndexConfig {
     fn default() -> Self {
         Self {
-            backend: VectorIndexBackendConfig::Exact,
+            backend: VectorIndexBackendConfig::Hnsw,
             exact_fallback_threshold: 50_000,
             semantic_top_k: 100,
             hnsw_m: 16,
@@ -512,6 +512,12 @@ mod tests {
     fn default_configuration_is_valid() {
         let config = AppConfig::default();
         assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn defaults_to_hnsw_vector_backend() {
+        let config = AppConfig::default();
+        assert_eq!(config.vector_index.backend, VectorIndexBackendConfig::Hnsw);
     }
 
     #[test]

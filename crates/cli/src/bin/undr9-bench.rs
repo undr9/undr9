@@ -591,6 +591,7 @@ fn execute_vector_search(snapshot: &GraphSnapshot) -> BenchResult<QueryResponse>
             query_vector: vec![1.0, 0.0, 0.5, 0.25],
             node_type: Some("memory".to_owned()),
             limit: 50,
+            top_k: None,
         },
         snapshot,
     )?)
@@ -608,6 +609,7 @@ fn execute_ranked_retrieval(
             from_epoch_ms: Some(1_000),
             to_epoch_ms: Some(1_000_000),
             limit: 50,
+            top_k: None,
             now_epoch_ms: 1_000_000,
             retrieval_profile: Some("v1-default".to_owned()),
         },

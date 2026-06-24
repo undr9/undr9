@@ -187,6 +187,13 @@ cargo run -p undr9-cli --bin undr9-cli -- \
   --node-id node-1
 ```
 
+Runtime vector index behavior:
+
+- HNSW is the default runtime vector backend
+- switch back to exact search with `export UNDR9_VECTOR_INDEX_BACKEND=exact`
+- keep HNSW but tune global defaults with `UNDR9_VECTOR_INDEX_SEMANTIC_TOP_K` and `UNDR9_HNSW_EF_SEARCH`
+- per-query `top_k` can override the semantic candidate budget for `VectorSearch` and `RankedRetrieval`
+
 ### Verify
 
 ```bash
@@ -214,6 +221,25 @@ curl -X POST http://127.0.0.1:8080/v1/nodes \
     "node_type": "memory",
     "properties": {
       "unique_key": { "kind": "String", "value": "alpha" }
+    }
+  }'
+```
+
+### Query With A `top_k` Override
+
+`limit` still controls how many ranked results are returned. `top_k` overrides the semantic
+candidate pool size for this request when the HNSW backend is active.
+
+```bash
+curl -X POST http://127.0.0.1:8080/v1/query \
+  -H 'content-type: application/json' \
+  -H "x-api-key: ${UNDR9_READER_API_KEY}" \
+  -d '{
+    "VectorSearch": {
+      "query_vector": [1.0, 0.0],
+      "node_type": "memory",
+      "limit": 10,
+      "top_k": 50
     }
   }'
 ```

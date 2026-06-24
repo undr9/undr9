@@ -80,6 +80,31 @@ Expected readiness response:
 }
 ```
 
+### Query With Per-Request `top_k`
+
+`top_k` is a query-level override for the semantic candidate budget used by `VectorSearch`
+and `RankedRetrieval`. It does not change the backend globally, and it does not replace the
+response `limit`.
+
+```bash
+curl -X POST http://127.0.0.1:8080/v1/query \
+  -H 'content-type: application/json' \
+  -H "x-api-key: ${UNDR9_READER_API_KEY}" \
+  -d '{
+    "RankedRetrieval": {
+      "query_vector": [1.0, 0.0],
+      "reference_node_id": "node_a",
+      "edge_type": "relates_to",
+      "from_epoch_ms": 1710000000000,
+      "to_epoch_ms": 1719999999999,
+      "limit": 10,
+      "top_k": 50,
+      "now_epoch_ms": 1720000000000,
+      "retrieval_profile": "v1-default"
+    }
+  }'
+```
+
 ### Create A Test Node
 
 ```bash
@@ -166,6 +191,22 @@ Current notable defaults:
 - WAL segment size: `67108864` bytes
 - WAL replay guardrail: `536870912` bytes
 - maintenance limits: `5,000,000` nodes and `10,000,000` edges
+- vector backend: `hnsw`
+- vector semantic candidate default: `100`
+- HNSW `ef_search`: `64`
+
+You can still force the exact backend explicitly:
+
+```bash
+export UNDR9_VECTOR_INDEX_BACKEND=exact
+```
+
+Or keep HNSW and tune the global backend settings:
+
+```bash
+export UNDR9_VECTOR_INDEX_SEMANTIC_TOP_K=250
+export UNDR9_HNSW_EF_SEARCH=128
+```
 
 ### 2. Inspect The On-Disk Layout
 

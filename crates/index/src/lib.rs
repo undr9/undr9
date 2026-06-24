@@ -374,6 +374,7 @@ impl GraphIndex {
         query_vector: &[f32],
         node_type: Option<&str>,
         limit: usize,
+        top_k_override: Option<usize>,
     ) -> Vec<NodeId> {
         if limit == 0 {
             return Vec::new();
@@ -386,7 +387,7 @@ impl GraphIndex {
         });
 
         self.vector_index
-            .semantic_candidate_ids(query_vector, limit, allowed_ids.as_ref())
+            .semantic_candidate_ids(query_vector, limit, top_k_override, allowed_ids.as_ref())
             .unwrap_or_else(|| self.exact_semantic_candidate_ids(allowed_ids.as_ref()))
     }
 
@@ -564,6 +565,7 @@ impl HnswVectorIndex {
         &self,
         query_vector: &[f32],
         limit: usize,
+        top_k_override: Option<usize>,
         allowed_ids: Option<&BTreeSet<NodeId>>,
     ) -> Option<Vec<NodeId>> {
         let runtime = self.runtime.as_ref()?;
@@ -575,7 +577,9 @@ impl HnswVectorIndex {
             return None;
         }
 
-        let candidate_limit = limit.max(self.semantic_top_k).min(self.candidate_ids.len());
+        let candidate_limit = limit
+            .max(top_k_override.unwrap_or(self.semantic_top_k))
+            .min(self.candidate_ids.len());
         let hits = match allowed_ids {
             Some(allowed_ids) => runtime.graph.search(
                 &runtime.vectors,
@@ -819,11 +823,14 @@ impl VectorIndexState {
         &self,
         query_vector: &[f32],
         limit: usize,
+        top_k_override: Option<usize>,
         allowed_ids: Option<&BTreeSet<NodeId>>,
     ) -> Option<Vec<NodeId>> {
         match self {
             Self::Exact(_) => None,
-            Self::Hnsw(index) => index.semantic_candidate_ids(query_vector, limit, allowed_ids),
+            Self::Hnsw(index) => {
+                index.semantic_candidate_ids(query_vector, limit, top_k_override, allowed_ids)
+            }
         }
     }
 

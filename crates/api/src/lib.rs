@@ -3447,6 +3447,7 @@ mod tests {
                             query_vector: vec![1.0],
                             node_type: Some("memory".to_owned()),
                             limit: 600,
+                            top_k: None,
                         })
                         .expect("query should serialize"),
                     ))
@@ -3470,6 +3471,7 @@ mod tests {
                             query_vector: vec![1.0],
                             node_type: Some("memory".to_owned()),
                             limit: 600,
+                            top_k: None,
                         })
                         .expect("query should serialize"),
                     ))
@@ -3748,6 +3750,7 @@ mod tests {
             query_vector: vec![1.0, 0.0],
             node_type: Some("memory".to_owned()),
             limit: 2,
+            top_k: None,
         })
         .expect("query should serialize");
         let vector_response = app
@@ -3784,6 +3787,7 @@ mod tests {
             from_epoch_ms: Some(900),
             to_epoch_ms: Some(10_000),
             limit: 2,
+            top_k: None,
             now_epoch_ms: 1_200,
             retrieval_profile: Some("v1-default".to_owned()),
         })

@@ -61,6 +61,8 @@ pub enum QueryRequest {
         query_vector: Vec<f32>,
         node_type: Option<String>,
         limit: usize,
+        #[serde(default)]
+        top_k: Option<usize>,
     },
     RankedRetrieval {
         query_vector: Option<Vec<f32>>,
@@ -69,6 +71,8 @@ pub enum QueryRequest {
         from_epoch_ms: Option<i64>,
         to_epoch_ms: Option<i64>,
         limit: usize,
+        #[serde(default)]
+        top_k: Option<usize>,
         now_epoch_ms: i64,
         retrieval_profile: Option<String>,
     },
@@ -126,6 +130,7 @@ pub struct SemanticCandidateQuery<'a> {
     query_vector: &'a [f32],
     node_type: Option<&'a str>,
     limit: usize,
+    top_k_override: Option<usize>,
 }
 
 pub trait GraphView {
@@ -220,7 +225,12 @@ impl GraphView for GraphSnapshot {
     ) -> Box<dyn Iterator<Item = NodeId> + 'a> {
         Box::new(
             self.indexes
-                .semantic_candidate_ids(query.query_vector, query.node_type, query.limit)
+                .semantic_candidate_ids(
+                    query.query_vector,
+                    query.node_type,
+                    query.limit,
+                    query.top_k_override,
+                )
                 .into_iter(),
         )
     }
@@ -371,6 +381,7 @@ impl GraphView for OverlayGraphView<'_> {
     ) -> Box<dyn Iterator<Item = NodeId> + 'a> {
         let _ = query.query_vector;
         let _ = query.limit;
+        let _ = query.top_k_override;
         match query.node_type {
             Some(node_type) => Box::new(self.node_ids_by_type(node_type).filter(move |node_id| {
                 self.get_node(node_id)
@@ -580,9 +591,11 @@ impl Planner {
                 query_vector,
                 node_type,
                 limit,
+                top_k,
             } => {
                 validate_query_vector(query_vector)?;
                 let limit = resolve_required_result_limit(*limit)?;
+                let top_k = top_k.map(resolve_required_result_limit).transpose()?;
                 let mut filters = vec![QueryFilter {
                     field: "vector_dimensions".to_owned(),
                     value: PropertyValue::Integer(query_vector.len() as i64),
@@ -600,6 +613,14 @@ impl Planner {
                             field: "limit".to_owned(),
                             value: PropertyValue::Integer(i64::try_from(limit).unwrap_or(i64::MAX)),
                         });
+                        if let Some(top_k) = top_k {
+                            filters.push(QueryFilter {
+                                field: "top_k".to_owned(),
+                                value: PropertyValue::Integer(
+                                    i64::try_from(top_k).unwrap_or(i64::MAX),
+                                ),
+                            });
+                        }
                         filters
                     },
                 }
@@ -610,6 +631,7 @@ impl Planner {
                 from_epoch_ms,
                 to_epoch_ms,
                 limit,
+                top_k,
                 ..
             } => {
                 if let Some(query_vector) = query_vector {
@@ -627,12 +649,20 @@ impl Planner {
                     ));
                 }
                 let limit = resolve_required_result_limit(*limit)?;
+                let top_k = top_k.map(resolve_required_result_limit).transpose()?;
+                let mut filters = vec![QueryFilter {
+                    field: "limit".to_owned(),
+                    value: PropertyValue::Integer(i64::try_from(limit).unwrap_or(i64::MAX)),
+                }];
+                if let Some(top_k) = top_k {
+                    filters.push(QueryFilter {
+                        field: "top_k".to_owned(),
+                        value: PropertyValue::Integer(i64::try_from(top_k).unwrap_or(i64::MAX)),
+                    });
+                }
                 QueryPlan {
                     kind: PlanKind::RankedHybrid,
-                    filters: vec![QueryFilter {
-                        field: "limit".to_owned(),
-                        value: PropertyValue::Integer(i64::try_from(limit).unwrap_or(i64::MAX)),
-                    }],
+                    filters,
                 }
             }
         };
@@ -796,9 +826,10 @@ impl Executor {
                 query_vector,
                 node_type,
                 limit,
+                top_k,
             } => {
                 let ranked_results =
-                    vector_search(snapshot, query_vector, node_type.as_deref(), *limit);
+                    vector_search(snapshot, query_vector, node_type.as_deref(), *limit, *top_k);
                 QueryExecution::from_response(QueryResponse {
                     plan_kind: plan.kind,
                     nodes: ranked_results
@@ -818,6 +849,7 @@ impl Executor {
                 from_epoch_ms,
                 to_epoch_ms,
                 limit,
+                top_k,
                 now_epoch_ms,
                 retrieval_profile,
             } => {
@@ -831,6 +863,7 @@ impl Executor {
                         from_epoch_ms: *from_epoch_ms,
                         to_epoch_ms: *to_epoch_ms,
                         limit: *limit,
+                        top_k_override: *top_k,
                         now_epoch_ms: *now_epoch_ms,
                         profile: &profile,
                     },
@@ -1211,6 +1244,7 @@ fn vector_search(
     query_vector: &[f32],
     node_type: Option<&str>,
     limit: usize,
+    top_k_override: Option<usize>,
 ) -> Vec<RankedNodeResult> {
     let mut heap = BinaryHeap::new();
     let candidate_ids = semantic_candidate_ids(
@@ -1219,6 +1253,7 @@ fn vector_search(
             query_vector,
             node_type,
             limit,
+            top_k_override,
         },
     );
     for result in candidate_ids
@@ -1252,6 +1287,7 @@ struct RankedRetrievalParams<'a> {
     from_epoch_ms: Option<i64>,
     to_epoch_ms: Option<i64>,
     limit: usize,
+    top_k_override: Option<usize>,
     now_epoch_ms: i64,
     profile: &'a RetrievalProfile,
 }
@@ -1328,6 +1364,7 @@ fn ranked_retrieval_candidates<'a>(
                 query_vector,
                 node_type: None,
                 limit: params.limit,
+                top_k_override: params.top_k_override,
             },
         ));
         if let Some(structural_distances) = structural_distances {
@@ -1863,12 +1900,28 @@ mod tests {
             from_epoch_ms: None,
             to_epoch_ms: None,
             limit: 5,
+            top_k: None,
             now_epoch_ms: 100,
             retrieval_profile: None,
         };
 
         let error = super::Planner::plan(&request).expect_err("request should be rejected");
         assert!(error.to_string().contains("requires at least"));
+    }
+
+    #[test]
+    fn planner_records_vector_search_top_k_override() {
+        let request = super::QueryRequest::VectorSearch {
+            query_vector: vec![1.0, 0.0],
+            node_type: Some("memory".to_owned()),
+            limit: 5,
+            top_k: Some(25),
+        };
+
+        let plan = super::Planner::plan(&request).expect("plan should be built");
+        assert!(plan.filters.iter().any(|filter| {
+            filter.field == "top_k" && filter.value == PropertyValue::Integer(25)
+        }));
     }
 
     #[test]
@@ -2184,6 +2237,7 @@ mod tests {
                 query_vector: vec![1.0, 0.0],
                 node_type: Some("memory".to_owned()),
                 limit: 2,
+                top_k: None,
             },
             &snapshot,
         )
@@ -2199,6 +2253,7 @@ mod tests {
                 from_epoch_ms: Some(900),
                 to_epoch_ms: Some(10_000),
                 limit: 3,
+                top_k: None,
                 now_epoch_ms: 1_200,
                 retrieval_profile: Some("v1-default".to_owned()),
             },
@@ -2283,6 +2338,7 @@ mod tests {
                 from_epoch_ms: Some(900),
                 to_epoch_ms: Some(1_100),
                 limit: 5,
+                top_k_override: None,
                 now_epoch_ms: 1_200,
                 profile: &super::RetrievalProfile::v1_default(),
             },
@@ -2466,6 +2522,7 @@ mod tests {
                 from_epoch_ms: Some(1_000),
                 to_epoch_ms: Some(2_000),
                 limit: 20,
+                top_k: None,
                 now_epoch_ms: 2_000,
                 retrieval_profile: Some("v1-default".to_owned()),
             },
