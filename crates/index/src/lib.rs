@@ -54,7 +54,7 @@ pub struct GraphIndex {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExactVectorIndex {
-    candidate_ids: Vec<NodeId>,
+    candidate_ids_by_name: BTreeMap<String, Vec<NodeId>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -65,14 +65,19 @@ pub enum VectorIndexState {
 
 #[derive(Serialize, Deserialize)]
 pub struct HnswVectorIndex {
-    candidate_ids: Vec<NodeId>,
-    dimension: Option<usize>,
+    spaces: BTreeMap<String, HnswVectorSpace>,
     max_nodes: usize,
     semantic_top_k: usize,
     exact_fallback_threshold: usize,
     m: usize,
     ef_construction: usize,
     ef_search: usize,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+struct HnswVectorSpace {
+    candidate_ids: Vec<NodeId>,
+    dimension: Option<usize>,
     #[serde(skip, default)]
     runtime: Option<Arc<HnswRuntime>>,
 }
@@ -80,6 +85,24 @@ pub struct HnswVectorIndex {
 struct HnswRuntime {
     graph: Hnsw<NodeId, Cosine>,
     vectors: InMemoryVectorStore<f32>,
+}
+
+impl PartialEq for HnswVectorSpace {
+    fn eq(&self, other: &Self) -> bool {
+        self.candidate_ids == other.candidate_ids && self.dimension == other.dimension
+    }
+}
+
+impl Eq for HnswVectorSpace {}
+
+impl std::fmt::Debug for HnswVectorSpace {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HnswVectorSpace")
+            .field("candidate_count", &self.candidate_ids.len())
+            .field("dimension", &self.dimension)
+            .field("runtime_ready", &self.runtime.is_some())
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -91,10 +114,11 @@ pub struct IndexSnapshot {
     pub reverse_adjacency_key_count: usize,
     pub label_bucket_count: usize,
     pub temporal_bucket_count: usize,
+    pub vector_space_count: usize,
     pub vector_candidate_count: usize,
     pub vector_backend: String,
     pub vector_runtime_ready: bool,
-    pub vector_dimension: Option<usize>,
+    pub vector_dimensions: BTreeMap<String, usize>,
 }
 
 pub struct VectorIndexLoadConfig<'a> {
@@ -109,14 +133,20 @@ struct PersistedVectorIndexManifest {
     format_version: u16,
     backend: String,
     last_applied_lsn: Option<u64>,
-    vector_candidate_count: usize,
-    dimension: usize,
     max_nodes: usize,
     semantic_top_k: usize,
     exact_fallback_threshold: usize,
     hnsw_m: usize,
     hnsw_ef_construction: usize,
     hnsw_ef_search: usize,
+    vector_spaces: Vec<PersistedVectorSpaceManifest>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+struct PersistedVectorSpaceManifest {
+    vector_name: String,
+    vector_candidate_count: usize,
+    dimension: usize,
 }
 
 impl Default for VectorIndexState {
@@ -365,13 +395,17 @@ impl GraphIndex {
             .flat_map(|(_, node_ids)| node_ids.iter())
     }
 
-    pub fn vector_candidate_ids_iter(&self) -> Box<dyn Iterator<Item = &NodeId> + '_> {
-        self.vector_index.candidate_ids_iter()
+    pub fn vector_candidate_ids_iter(
+        &self,
+        vector_name: &str,
+    ) -> Box<dyn Iterator<Item = &NodeId> + '_> {
+        self.vector_index.candidate_ids_iter(vector_name)
     }
 
     pub fn semantic_candidate_ids(
         &self,
         query_vector: &[f32],
+        vector_name: &str,
         node_type: Option<&str>,
         limit: usize,
         top_k_override: Option<usize>,
@@ -387,8 +421,14 @@ impl GraphIndex {
         });
 
         self.vector_index
-            .semantic_candidate_ids(query_vector, limit, top_k_override, allowed_ids.as_ref())
-            .unwrap_or_else(|| self.exact_semantic_candidate_ids(allowed_ids.as_ref()))
+            .semantic_candidate_ids(
+                query_vector,
+                vector_name,
+                limit,
+                top_k_override,
+                allowed_ids.as_ref(),
+            )
+            .unwrap_or_else(|| self.exact_semantic_candidate_ids(vector_name, allowed_ids.as_ref()))
     }
 
     pub fn snapshot(&self) -> IndexSnapshot {
@@ -400,10 +440,11 @@ impl GraphIndex {
             reverse_adjacency_key_count: self.reverse_adjacency_index.len(),
             label_bucket_count: self.label_type_index.len(),
             temporal_bucket_count: self.temporal_index.len(),
+            vector_space_count: self.vector_index.space_count(),
             vector_candidate_count: self.vector_index.len(),
             vector_backend: self.vector_index.backend_name().to_owned(),
             vector_runtime_ready: self.vector_index.runtime_ready(),
-            vector_dimension: self.vector_index.dimension(),
+            vector_dimensions: self.vector_index.dimensions(),
         }
     }
 
@@ -418,9 +459,13 @@ impl GraphIndex {
             .persist(manifest_path, graph_path, vectors_path, last_applied_lsn)
     }
 
-    fn exact_semantic_candidate_ids(&self, allowed_ids: Option<&BTreeSet<NodeId>>) -> Vec<NodeId> {
+    fn exact_semantic_candidate_ids(
+        &self,
+        vector_name: &str,
+        allowed_ids: Option<&BTreeSet<NodeId>>,
+    ) -> Vec<NodeId> {
         self.vector_index
-            .candidate_ids_iter()
+            .candidate_ids_iter(vector_name)
             .filter(|node_id| {
                 allowed_ids
                     .map(|allowed_ids| allowed_ids.contains(*node_id))
@@ -433,38 +478,62 @@ impl GraphIndex {
 
 impl ExactVectorIndex {
     fn upsert_node(&mut self, node: &NodeRecord) {
-        if node.embedding().is_some() {
-            push_unique(&mut self.candidate_ids, node.id.clone());
-        } else {
-            self.candidate_ids.retain(|node_id| node_id != &node.id);
+        for (vector_name, candidate_ids) in &mut self.candidate_ids_by_name {
+            if node.vector(vector_name).is_some() {
+                push_unique(candidate_ids, node.id.clone());
+            } else {
+                candidate_ids.retain(|node_id| node_id != &node.id);
+            }
+        }
+        self.candidate_ids_by_name
+            .retain(|_, candidate_ids| !candidate_ids.is_empty());
+        for vector_name in node.vectors.keys() {
+            push_unique(
+                self.candidate_ids_by_name
+                    .entry(vector_name.clone())
+                    .or_default(),
+                node.id.clone(),
+            );
         }
     }
 
     fn delete_node(&mut self, node: &NodeRecord) {
-        self.candidate_ids.retain(|node_id| node_id != &node.id);
+        for candidate_ids in self.candidate_ids_by_name.values_mut() {
+            candidate_ids.retain(|node_id| node_id != &node.id);
+        }
+        self.candidate_ids_by_name
+            .retain(|_, candidate_ids| !candidate_ids.is_empty());
     }
 
-    fn candidate_ids_iter(&self) -> impl Iterator<Item = &NodeId> {
-        self.candidate_ids.iter()
+    fn candidate_ids_iter(&self, vector_name: &str) -> Box<dyn Iterator<Item = &NodeId> + '_> {
+        match self.candidate_ids_by_name.get(vector_name) {
+            Some(candidate_ids) => Box::new(candidate_ids.iter()),
+            None => Box::new(std::iter::empty()),
+        }
     }
 
     fn len(&self) -> usize {
-        self.candidate_ids.len()
+        self.candidate_ids_by_name
+            .values()
+            .map(Vec::len)
+            .sum::<usize>()
+    }
+
+    fn space_count(&self) -> usize {
+        self.candidate_ids_by_name.len()
     }
 }
 
 impl Clone for HnswVectorIndex {
     fn clone(&self) -> Self {
         Self {
-            candidate_ids: self.candidate_ids.clone(),
-            dimension: self.dimension,
+            spaces: self.spaces.clone(),
             max_nodes: self.max_nodes,
             semantic_top_k: self.semantic_top_k,
             exact_fallback_threshold: self.exact_fallback_threshold,
             m: self.m,
             ef_construction: self.ef_construction,
             ef_search: self.ef_search,
-            runtime: self.runtime.clone(),
         }
     }
 }
@@ -472,23 +541,30 @@ impl Clone for HnswVectorIndex {
 impl std::fmt::Debug for HnswVectorIndex {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("HnswVectorIndex")
-            .field("candidate_count", &self.candidate_ids.len())
-            .field("dimension", &self.dimension)
+            .field("space_count", &self.spaces.len())
+            .field(
+                "candidate_count",
+                &self
+                    .spaces
+                    .values()
+                    .map(|space| space.candidate_ids.len())
+                    .sum::<usize>(),
+            )
+            .field("dimensions", &self.dimensions())
             .field("max_nodes", &self.max_nodes)
             .field("semantic_top_k", &self.semantic_top_k)
             .field("exact_fallback_threshold", &self.exact_fallback_threshold)
             .field("m", &self.m)
             .field("ef_construction", &self.ef_construction)
             .field("ef_search", &self.ef_search)
-            .field("runtime_ready", &self.runtime.is_some())
+            .field("runtime_ready", &self.runtime_ready())
             .finish()
     }
 }
 
 impl PartialEq for HnswVectorIndex {
     fn eq(&self, other: &Self) -> bool {
-        self.candidate_ids == other.candidate_ids
-            && self.dimension == other.dimension
+        self.spaces == other.spaces
             && self.max_nodes == other.max_nodes
             && self.semantic_top_k == other.semantic_top_k
             && self.exact_fallback_threshold == other.exact_fallback_threshold
@@ -503,75 +579,69 @@ impl Eq for HnswVectorIndex {}
 impl HnswVectorIndex {
     fn build(nodes: &[NodeRecord], config: &VectorIndexConfig) -> Self {
         Self {
-            candidate_ids: exact_vector_candidate_ids(nodes),
-            dimension: default_embedding_dimension(nodes),
+            spaces: hnsw_spaces_from_nodes(nodes),
             max_nodes: nodes.len().saturating_add(1_024).max(1),
             semantic_top_k: config.semantic_top_k,
             exact_fallback_threshold: config.exact_fallback_threshold,
             m: config.hnsw_m,
             ef_construction: config.hnsw_ef_construction,
             ef_search: config.hnsw_ef_search,
-            runtime: None,
         }
     }
 
     fn upsert_node(&mut self, node: &NodeRecord) {
-        if node.embedding().is_some() {
-            push_unique(&mut self.candidate_ids, node.id.clone());
-        } else {
-            self.candidate_ids.retain(|node_id| node_id != &node.id);
+        for (vector_name, space) in &mut self.spaces {
+            space.upsert_node(vector_name, node);
         }
-
-        let Some(runtime) = self.runtime.as_ref() else {
-            return;
-        };
-
-        match (node.embedding(), self.dimension) {
-            (Some(embedding), Some(dimension)) if embedding.len() == dimension => {
-                if runtime
-                    .graph
-                    .set(&runtime.vectors, node.id.clone(), embedding)
-                    .is_err()
-                {
-                    self.runtime = None;
-                }
-            }
-            (None, _) => {
-                let _ = runtime.graph.delete(&node.id);
-            }
-            _ => {
-                let _ = runtime.graph.delete(&node.id);
-                self.runtime = None;
-            }
+        for vector_name in node.vectors.keys() {
+            self.spaces
+                .entry(vector_name.clone())
+                .or_insert_with(|| HnswVectorSpace::new(node.vector(vector_name).map(|v| v.len())))
+                .upsert_node(vector_name, node);
         }
+        self.spaces
+            .retain(|_, space| !space.candidate_ids.is_empty());
     }
 
     fn delete_node(&mut self, node: &NodeRecord) {
-        self.candidate_ids.retain(|node_id| node_id != &node.id);
-        if let Some(runtime) = self.runtime.as_ref() {
-            let _ = runtime.graph.delete(&node.id);
+        for space in self.spaces.values_mut() {
+            space.delete_node(node);
+        }
+        self.spaces
+            .retain(|_, space| !space.candidate_ids.is_empty());
+    }
+
+    fn candidate_ids_iter(&self, vector_name: &str) -> Box<dyn Iterator<Item = &NodeId> + '_> {
+        match self.spaces.get(vector_name) {
+            Some(space) => Box::new(space.candidate_ids.iter()),
+            None => Box::new(std::iter::empty()),
         }
     }
 
-    fn candidate_ids_iter(&self) -> impl Iterator<Item = &NodeId> {
-        self.candidate_ids.iter()
+    fn len(&self) -> usize {
+        self.spaces
+            .values()
+            .map(|space| space.candidate_ids.len())
+            .sum::<usize>()
     }
 
-    fn len(&self) -> usize {
-        self.candidate_ids.len()
+    fn space_count(&self) -> usize {
+        self.spaces.len()
     }
 
     fn semantic_candidate_ids(
         &self,
         query_vector: &[f32],
+        vector_name: &str,
         limit: usize,
         top_k_override: Option<usize>,
         allowed_ids: Option<&BTreeSet<NodeId>>,
     ) -> Option<Vec<NodeId>> {
-        let runtime = self.runtime.as_ref()?;
-        let dimension = self.dimension?;
+        let space = self.spaces.get(vector_name)?;
+        let runtime = space.runtime.as_ref()?;
+        let dimension = space.dimension?;
         if limit == 0
-            || self.candidate_ids.len() <= self.exact_fallback_threshold
+            || space.candidate_ids.len() <= self.exact_fallback_threshold
             || query_vector.len() != dimension
         {
             return None;
@@ -579,7 +649,7 @@ impl HnswVectorIndex {
 
         let candidate_limit = limit
             .max(top_k_override.unwrap_or(self.semantic_top_k))
-            .min(self.candidate_ids.len());
+            .min(space.candidate_ids.len());
         let hits = match allowed_ids {
             Some(allowed_ids) => runtime.graph.search(
                 &runtime.vectors,
@@ -596,47 +666,24 @@ impl HnswVectorIndex {
         Some(hits.into_iter().map(|hit| hit.key).collect())
     }
 
-    fn build_runtime(&self, nodes: &[NodeRecord]) -> Option<Arc<HnswRuntime>> {
-        let dimension = self.dimension?;
-        if dimension == 0 || self.candidate_ids.len() <= self.exact_fallback_threshold {
-            return None;
-        }
-        if nodes
-            .iter()
-            .filter_map(NodeRecord::embedding)
-            .any(|embedding| embedding.len() != dimension)
-        {
-            return None;
-        }
-
-        let config = RuntimeHnswConfig::new(dimension, self.max_nodes)
-            .m(self.m)
-            .ef_construction(self.ef_construction)
-            .ef_search(self.ef_search);
-        let graph = Hnsw::new(Cosine::new(), config);
-        let vectors = InMemoryVectorStore::new(dimension, self.max_nodes);
-
-        for node in nodes {
-            if let Some(embedding) = node.embedding() {
-                graph.insert(&vectors, node.id.clone(), embedding).ok()?;
-            }
-        }
-
-        Some(Arc::new(HnswRuntime { graph, vectors }))
-    }
-
     fn initialize_runtime_from_nodes(&mut self, nodes: &[NodeRecord]) {
-        if self.runtime.is_none() {
-            self.runtime = self.build_runtime(nodes);
+        for (vector_name, space) in &mut self.spaces {
+            if space.runtime.is_none() {
+                space.runtime = space.build_runtime(
+                    vector_name,
+                    nodes,
+                    self.max_nodes,
+                    self.exact_fallback_threshold,
+                    self.m,
+                    self.ef_construction,
+                    self.ef_search,
+                );
+            }
         }
     }
 
     fn try_load_runtime(&mut self, load: &VectorIndexLoadConfig<'_>) -> Undr9Result<bool> {
-        if self.dimension.is_none()
-            || !load.manifest_path.exists()
-            || !load.graph_path.exists()
-            || !load.vectors_path.exists()
-        {
+        if !load.manifest_path.exists() {
             return Ok(false);
         }
 
@@ -645,41 +692,57 @@ impl HnswVectorIndex {
             return Ok(false);
         }
 
-        let graph = {
-            let file = File::open(load.graph_path).map_err(|error| {
-                Undr9Error::Io(format!(
-                    "failed to open vector index graph '{}': {error}",
-                    load.graph_path.display()
-                ))
-            })?;
-            let mut reader = BufReader::new(file);
-            Hnsw::load_from(Cosine::new(), &mut reader).map_err(|error| {
-                Undr9Error::Corruption(format!(
-                    "failed to load HNSW graph '{}': {error}",
-                    load.graph_path.display()
-                ))
-            })?
-        };
-
-        let vectors = {
-            let file = File::open(load.vectors_path).map_err(|error| {
-                Undr9Error::Io(format!(
-                    "failed to open vector index vectors '{}': {error}",
-                    load.vectors_path.display()
-                ))
-            })?;
-            let mut reader = BufReader::new(file);
-            let (vectors, _) =
-                InMemoryVectorStore::<f32>::load_from(&mut reader).map_err(|error| {
-                    Undr9Error::Corruption(format!(
-                        "failed to load vector store '{}': {error}",
-                        load.vectors_path.display()
+        for space_manifest in &manifest.vector_spaces {
+            let Some(space) = self.spaces.get_mut(&space_manifest.vector_name) else {
+                return Ok(false);
+            };
+            let graph_path = vector_space_sidecar_path(
+                load.graph_path,
+                &space_manifest.vector_name,
+                ".hnsw.bin",
+            );
+            let vectors_path = vector_space_sidecar_path(
+                load.vectors_path,
+                &space_manifest.vector_name,
+                ".vectors.bin",
+            );
+            if !graph_path.exists() || !vectors_path.exists() {
+                return Ok(false);
+            }
+            let graph = {
+                let file = File::open(&graph_path).map_err(|error| {
+                    Undr9Error::Io(format!(
+                        "failed to open vector index graph '{}': {error}",
+                        graph_path.display()
                     ))
                 })?;
-            vectors
-        };
-
-        self.runtime = Some(Arc::new(HnswRuntime { graph, vectors }));
+                let mut reader = BufReader::new(file);
+                Hnsw::load_from(Cosine::new(), &mut reader).map_err(|error| {
+                    Undr9Error::Corruption(format!(
+                        "failed to load HNSW graph '{}': {error}",
+                        graph_path.display()
+                    ))
+                })?
+            };
+            let vectors = {
+                let file = File::open(&vectors_path).map_err(|error| {
+                    Undr9Error::Io(format!(
+                        "failed to open vector index vectors '{}': {error}",
+                        vectors_path.display()
+                    ))
+                })?;
+                let mut reader = BufReader::new(file);
+                let (vectors, _) =
+                    InMemoryVectorStore::<f32>::load_from(&mut reader).map_err(|error| {
+                        Undr9Error::Corruption(format!(
+                            "failed to load vector store '{}': {error}",
+                            vectors_path.display()
+                        ))
+                    })?;
+                vectors
+            };
+            space.runtime = Some(Arc::new(HnswRuntime { graph, vectors }));
+        }
         Ok(true)
     }
 
@@ -690,14 +753,10 @@ impl HnswVectorIndex {
         vectors_path: &Path,
         last_applied_lsn: Option<u64>,
     ) -> Undr9Result<()> {
-        let Some(runtime) = self.runtime.as_ref() else {
+        if self.spaces.is_empty() {
             cleanup_vector_index_sidecars(manifest_path, graph_path, vectors_path)?;
             return Ok(());
-        };
-        let Some(dimension) = self.dimension else {
-            cleanup_vector_index_sidecars(manifest_path, graph_path, vectors_path)?;
-            return Ok(());
-        };
+        }
 
         for path in [manifest_path, graph_path, vectors_path] {
             if let Some(parent) = path.parent() {
@@ -710,39 +769,63 @@ impl HnswVectorIndex {
             }
         }
 
-        {
-            let file = File::create(graph_path).map_err(|error| {
-                Undr9Error::Io(format!(
-                    "failed to create vector index graph '{}': {error}",
-                    graph_path.display()
-                ))
-            })?;
-            let mut writer = BufWriter::new(file);
-            runtime.graph.save_to(&mut writer).map_err(|error| {
-                Undr9Error::Serialization(format!(
-                    "failed to persist HNSW graph '{}': {error}",
-                    graph_path.display()
-                ))
-            })?;
-        }
+        cleanup_matching_sidecars(graph_path, ".hnsw.bin")?;
+        cleanup_matching_sidecars(vectors_path, ".vectors.bin")?;
 
-        {
-            let file = File::create(vectors_path).map_err(|error| {
-                Undr9Error::Io(format!(
-                    "failed to create vector store '{}': {error}",
-                    vectors_path.display()
-                ))
-            })?;
-            let mut writer = BufWriter::new(file);
-            runtime
-                .vectors
-                .save_to(&mut writer, runtime.graph.len())
-                .map_err(|error| {
-                    Undr9Error::Serialization(format!(
-                        "failed to persist vector store '{}': {error}",
-                        vectors_path.display()
+        let mut vector_spaces = Vec::new();
+        for (vector_name, space) in &self.spaces {
+            let Some(runtime) = space.runtime.as_ref() else {
+                continue;
+            };
+            let Some(dimension) = space.dimension else {
+                continue;
+            };
+            let graph_space_path = vector_space_sidecar_path(graph_path, vector_name, ".hnsw.bin");
+            let vectors_space_path =
+                vector_space_sidecar_path(vectors_path, vector_name, ".vectors.bin");
+            {
+                let file = File::create(&graph_space_path).map_err(|error| {
+                    Undr9Error::Io(format!(
+                        "failed to create vector index graph '{}': {error}",
+                        graph_space_path.display()
                     ))
                 })?;
+                let mut writer = BufWriter::new(file);
+                runtime.graph.save_to(&mut writer).map_err(|error| {
+                    Undr9Error::Serialization(format!(
+                        "failed to persist HNSW graph '{}': {error}",
+                        graph_space_path.display()
+                    ))
+                })?;
+            }
+            {
+                let file = File::create(&vectors_space_path).map_err(|error| {
+                    Undr9Error::Io(format!(
+                        "failed to create vector store '{}': {error}",
+                        vectors_space_path.display()
+                    ))
+                })?;
+                let mut writer = BufWriter::new(file);
+                runtime
+                    .vectors
+                    .save_to(&mut writer, runtime.graph.len())
+                    .map_err(|error| {
+                        Undr9Error::Serialization(format!(
+                            "failed to persist vector store '{}': {error}",
+                            vectors_space_path.display()
+                        ))
+                    })?;
+            }
+            vector_spaces.push(PersistedVectorSpaceManifest {
+                vector_name: vector_name.clone(),
+                vector_candidate_count: space.candidate_ids.len(),
+                dimension,
+            });
+        }
+
+        if vector_spaces.is_empty() {
+            cleanup_vector_index_sidecars(manifest_path, graph_path, vectors_path)?;
+            return Ok(());
         }
 
         write_vector_index_manifest(
@@ -751,14 +834,13 @@ impl HnswVectorIndex {
                 format_version: 1,
                 backend: "hnsw".to_owned(),
                 last_applied_lsn,
-                vector_candidate_count: self.candidate_ids.len(),
-                dimension,
                 max_nodes: self.max_nodes,
                 semantic_top_k: self.semantic_top_k,
                 exact_fallback_threshold: self.exact_fallback_threshold,
                 hnsw_m: self.m,
                 hnsw_ef_construction: self.ef_construction,
                 hnsw_ef_search: self.ef_search,
+                vector_spaces,
             },
         )?;
         Ok(())
@@ -772,14 +854,39 @@ impl HnswVectorIndex {
         manifest.format_version == 1
             && manifest.backend == "hnsw"
             && manifest.last_applied_lsn == expected_last_applied_lsn
-            && Some(manifest.dimension) == self.dimension
-            && manifest.vector_candidate_count == self.candidate_ids.len()
             && manifest.max_nodes == self.max_nodes
             && manifest.semantic_top_k == self.semantic_top_k
             && manifest.exact_fallback_threshold == self.exact_fallback_threshold
             && manifest.hnsw_m == self.m
             && manifest.hnsw_ef_construction == self.ef_construction
             && manifest.hnsw_ef_search == self.ef_search
+            && manifest.vector_spaces.len() == self.spaces.len()
+            && manifest.vector_spaces.iter().all(|space_manifest| {
+                self.spaces
+                    .get(&space_manifest.vector_name)
+                    .map(|space| {
+                        Some(space_manifest.dimension) == space.dimension
+                            && space_manifest.vector_candidate_count == space.candidate_ids.len()
+                    })
+                    .unwrap_or(false)
+            })
+    }
+
+    fn runtime_ready(&self) -> bool {
+        self.spaces.values().all(|space| {
+            space.runtime.is_some() || space.candidate_ids.len() <= self.exact_fallback_threshold
+        })
+    }
+
+    fn dimensions(&self) -> BTreeMap<String, usize> {
+        self.spaces
+            .iter()
+            .filter_map(|(vector_name, space)| {
+                space
+                    .dimension
+                    .map(|dimension| (vector_name.clone(), dimension))
+            })
+            .collect()
     }
 }
 
@@ -805,10 +912,10 @@ impl VectorIndexState {
         }
     }
 
-    fn candidate_ids_iter(&self) -> Box<dyn Iterator<Item = &NodeId> + '_> {
+    fn candidate_ids_iter(&self, vector_name: &str) -> Box<dyn Iterator<Item = &NodeId> + '_> {
         match self {
-            Self::Exact(index) => Box::new(index.candidate_ids_iter()),
-            Self::Hnsw(index) => Box::new(index.candidate_ids_iter()),
+            Self::Exact(index) => index.candidate_ids_iter(vector_name),
+            Self::Hnsw(index) => index.candidate_ids_iter(vector_name),
         }
     }
 
@@ -822,15 +929,20 @@ impl VectorIndexState {
     fn semantic_candidate_ids(
         &self,
         query_vector: &[f32],
+        vector_name: &str,
         limit: usize,
         top_k_override: Option<usize>,
         allowed_ids: Option<&BTreeSet<NodeId>>,
     ) -> Option<Vec<NodeId>> {
         match self {
             Self::Exact(_) => None,
-            Self::Hnsw(index) => {
-                index.semantic_candidate_ids(query_vector, limit, top_k_override, allowed_ids)
-            }
+            Self::Hnsw(index) => index.semantic_candidate_ids(
+                query_vector,
+                vector_name,
+                limit,
+                top_k_override,
+                allowed_ids,
+            ),
         }
     }
 
@@ -875,33 +987,157 @@ impl VectorIndexState {
     fn runtime_ready(&self) -> bool {
         match self {
             Self::Exact(_) => true,
-            Self::Hnsw(index) => index.runtime.is_some(),
+            Self::Hnsw(index) => index.runtime_ready(),
         }
     }
 
-    fn dimension(&self) -> Option<usize> {
+    fn dimensions(&self) -> BTreeMap<String, usize> {
         match self {
-            Self::Exact(_) => None,
-            Self::Hnsw(index) => index.dimension,
+            Self::Exact(_) => BTreeMap::new(),
+            Self::Hnsw(index) => index.dimensions(),
+        }
+    }
+
+    fn space_count(&self) -> usize {
+        match self {
+            Self::Exact(index) => index.space_count(),
+            Self::Hnsw(index) => index.space_count(),
         }
     }
 }
 
-fn exact_vector_candidate_ids(nodes: &[NodeRecord]) -> Vec<NodeId> {
-    nodes
-        .iter()
-        .filter(|node| node.embedding().is_some())
-        .map(|node| node.id.clone())
+impl HnswVectorSpace {
+    fn new(dimension: Option<usize>) -> Self {
+        Self {
+            candidate_ids: Vec::new(),
+            dimension,
+            runtime: None,
+        }
+    }
+
+    fn upsert_node(&mut self, vector_name: &str, node: &NodeRecord) {
+        match (node.vector(vector_name), self.dimension) {
+            (Some(vector), Some(dimension)) if vector.len() == dimension => {
+                push_unique(&mut self.candidate_ids, node.id.clone());
+                if let Some(runtime) = self.runtime.as_ref() {
+                    if runtime
+                        .graph
+                        .set(&runtime.vectors, node.id.clone(), vector)
+                        .is_err()
+                    {
+                        self.runtime = None;
+                    }
+                }
+            }
+            (Some(vector), None) => {
+                self.dimension = Some(vector.len());
+                push_unique(&mut self.candidate_ids, node.id.clone());
+                self.runtime = None;
+            }
+            (Some(_), Some(_)) => {
+                self.candidate_ids.retain(|node_id| node_id != &node.id);
+                if let Some(runtime) = self.runtime.as_ref() {
+                    let _ = runtime.graph.delete(&node.id);
+                }
+                self.runtime = None;
+            }
+            (None, _) => {
+                self.delete_node(node);
+            }
+        }
+    }
+
+    fn delete_node(&mut self, node: &NodeRecord) {
+        self.candidate_ids.retain(|node_id| node_id != &node.id);
+        if let Some(runtime) = self.runtime.as_ref() {
+            let _ = runtime.graph.delete(&node.id);
+        }
+    }
+
+    fn build_runtime(
+        &self,
+        vector_name: &str,
+        nodes: &[NodeRecord],
+        max_nodes: usize,
+        exact_fallback_threshold: usize,
+        m: usize,
+        ef_construction: usize,
+        ef_search: usize,
+    ) -> Option<Arc<HnswRuntime>> {
+        let dimension = self.dimension?;
+        if dimension == 0 || self.candidate_ids.len() <= exact_fallback_threshold {
+            return None;
+        }
+        if nodes
+            .iter()
+            .filter_map(|node| node.vector(vector_name))
+            .any(|vector| vector.len() != dimension)
+        {
+            return None;
+        }
+
+        let config = RuntimeHnswConfig::new(dimension, max_nodes)
+            .m(m)
+            .ef_construction(ef_construction)
+            .ef_search(ef_search);
+        let graph = Hnsw::new(Cosine::new(), config);
+        let vectors = InMemoryVectorStore::new(dimension, max_nodes);
+        for node in nodes {
+            if let Some(vector) = node.vector(vector_name) {
+                graph.insert(&vectors, node.id.clone(), vector).ok()?;
+            }
+        }
+        Some(Arc::new(HnswRuntime { graph, vectors }))
+    }
+}
+
+fn hnsw_spaces_from_nodes(nodes: &[NodeRecord]) -> BTreeMap<String, HnswVectorSpace> {
+    let mut vectors_by_name = BTreeMap::<String, Vec<&[f32]>>::new();
+    let mut candidate_ids_by_name = BTreeMap::<String, Vec<NodeId>>::new();
+    for node in nodes {
+        for (vector_name, vector) in &node.vectors {
+            vectors_by_name
+                .entry(vector_name.clone())
+                .or_default()
+                .push(vector.as_slice());
+            push_unique(
+                candidate_ids_by_name
+                    .entry(vector_name.clone())
+                    .or_default(),
+                node.id.clone(),
+            );
+        }
+    }
+
+    candidate_ids_by_name
+        .into_iter()
+        .map(|(vector_name, candidate_ids)| {
+            let dimension = shared_dimension(
+                vectors_by_name
+                    .get(&vector_name)
+                    .into_iter()
+                    .flatten()
+                    .copied(),
+            );
+            (
+                vector_name,
+                HnswVectorSpace {
+                    candidate_ids,
+                    dimension,
+                    runtime: None,
+                },
+            )
+        })
         .collect()
 }
 
-fn default_embedding_dimension(nodes: &[NodeRecord]) -> Option<usize> {
+fn shared_dimension<'a>(vectors: impl Iterator<Item = &'a [f32]>) -> Option<usize> {
     let mut dimension = None;
-    for embedding in nodes.iter().filter_map(NodeRecord::embedding) {
+    for vector in vectors {
         match dimension {
-            Some(existing) if existing != embedding.len() => return None,
+            Some(existing) if existing != vector.len() => return None,
             Some(_) => {}
-            None => dimension = Some(embedding.len()),
+            None => dimension = Some(vector.len()),
         }
     }
     dimension
@@ -945,6 +1181,8 @@ fn cleanup_vector_index_sidecars(
     graph_path: &Path,
     vectors_path: &Path,
 ) -> Undr9Result<()> {
+    cleanup_matching_sidecars(graph_path, ".hnsw.bin")?;
+    cleanup_matching_sidecars(vectors_path, ".vectors.bin")?;
     for path in [manifest_path, graph_path, vectors_path] {
         match fs::remove_file(path) {
             Ok(()) => {}
@@ -958,6 +1196,89 @@ fn cleanup_vector_index_sidecars(
         }
     }
     Ok(())
+}
+
+fn cleanup_matching_sidecars(base_path: &Path, suffix: &str) -> Undr9Result<()> {
+    let Some(parent) = base_path.parent() else {
+        return Ok(());
+    };
+    let Some(file_name) = base_path.file_name().and_then(|name| name.to_str()) else {
+        return Ok(());
+    };
+    let prefix = file_name.strip_suffix(suffix).unwrap_or(file_name);
+    let entries = match fs::read_dir(parent) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => {
+            return Err(Undr9Error::Io(format!(
+                "failed to read vector index directory '{}': {error}",
+                parent.display()
+            )))
+        }
+    };
+
+    for entry in entries {
+        let entry = entry.map_err(|error| {
+            Undr9Error::Io(format!(
+                "failed to inspect vector index directory '{}': {error}",
+                parent.display()
+            ))
+        })?;
+        let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
+            continue;
+        };
+        let matches_named_sidecar =
+            name.starts_with(&format!("{prefix}.")) && name.ends_with(suffix);
+        if name == file_name || matches_named_sidecar {
+            match fs::remove_file(entry.path()) {
+                Ok(()) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => {
+                    return Err(Undr9Error::Io(format!(
+                        "failed to remove vector index sidecar '{}': {error}",
+                        entry.path().display()
+                    )))
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn vector_space_sidecar_path(
+    base_path: &Path,
+    vector_name: &str,
+    suffix: &str,
+) -> std::path::PathBuf {
+    let parent = base_path
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_default();
+    let file_name = base_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default();
+    let prefix = file_name.strip_suffix(suffix).unwrap_or(file_name);
+    parent.join(format!(
+        "{prefix}.{}{suffix}",
+        sanitize_vector_name(vector_name)
+    ))
+}
+
+fn sanitize_vector_name(vector_name: &str) -> String {
+    let mut sanitized = String::with_capacity(vector_name.len().max(1));
+    for ch in vector_name.chars() {
+        if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+            sanitized.push(ch);
+        } else {
+            sanitized.push('_');
+        }
+    }
+    if sanitized.is_empty() {
+        "default".to_owned()
+    } else {
+        sanitized
+    }
 }
 
 pub trait EdgeRecordLookup {
@@ -1042,10 +1363,7 @@ mod tests {
         node_a
             .properties
             .insert("timestamp".to_owned(), PropertyValue::Integer(100));
-        node_a.properties.insert(
-            "embedding".to_owned(),
-            PropertyValue::FloatList(vec![0.1, 0.2]),
-        );
+        node_a.vectors.insert("default".to_owned(), vec![0.1, 0.2]);
         let node_b =
             NodeRecord::new(NodeId::new("node_b").expect("valid id"), "memory").expect("node");
         let edge = EdgeRecord {
@@ -1080,7 +1398,7 @@ mod tests {
             1
         );
         assert_eq!(index.node_ids_in_time_range(90, 110).len(), 1);
-        assert_eq!(index.vector_candidate_ids_iter().count(), 1);
+        assert_eq!(index.vector_candidate_ids_iter("default").count(), 1);
     }
 
     #[test]
@@ -1094,10 +1412,7 @@ mod tests {
         node_a
             .properties
             .insert("timestamp".to_owned(), PropertyValue::Integer(100));
-        node_a.properties.insert(
-            "embedding".to_owned(),
-            PropertyValue::FloatList(vec![0.1, 0.2]),
-        );
+        node_a.vectors.insert("default".to_owned(), vec![0.1, 0.2]);
 
         let node_b =
             NodeRecord::new(NodeId::new("node_b").expect("valid id"), "memory").expect("node");
@@ -1154,7 +1469,7 @@ mod tests {
         );
         assert_eq!(incremental.node_ids_by_type("memory_v2").len(), 1);
         assert_eq!(incremental.node_ids_in_time_range(200, 300).len(), 1);
-        assert_eq!(incremental.vector_candidate_ids_iter().count(), 0);
+        assert_eq!(incremental.vector_candidate_ids_iter("default").count(), 0);
     }
 
     #[test]
@@ -1167,22 +1482,13 @@ mod tests {
     fn hnsw_backend_returns_filtered_semantic_candidates() {
         let mut node_a =
             NodeRecord::new(NodeId::new("node_a").expect("valid id"), "memory").expect("node");
-        node_a.properties.insert(
-            "embedding".to_owned(),
-            PropertyValue::FloatList(vec![1.0, 0.0]),
-        );
+        node_a.vectors.insert("default".to_owned(), vec![1.0, 0.0]);
         let mut node_b =
             NodeRecord::new(NodeId::new("node_b").expect("valid id"), "memory").expect("node");
-        node_b.properties.insert(
-            "embedding".to_owned(),
-            PropertyValue::FloatList(vec![0.8, 0.2]),
-        );
+        node_b.vectors.insert("default".to_owned(), vec![0.8, 0.2]);
         let mut node_c =
             NodeRecord::new(NodeId::new("node_c").expect("valid id"), "profile").expect("node");
-        node_c.properties.insert(
-            "embedding".to_owned(),
-            PropertyValue::FloatList(vec![1.0, 0.0]),
-        );
+        node_c.vectors.insert("default".to_owned(), vec![1.0, 0.0]);
 
         let config = VectorIndexConfig {
             backend: VectorIndexBackendConfig::Hnsw,
@@ -1198,7 +1504,7 @@ mod tests {
             &config,
         );
 
-        let hits = index.semantic_candidate_ids(&[1.0, 0.0], Some("memory"), 2);
+        let hits = index.semantic_candidate_ids(&[1.0, 0.0], "default", Some("memory"), 2, None);
         assert_eq!(hits.len(), 2);
         assert_eq!(hits[0], node_a.id);
         assert!(hits.iter().all(|node_id| node_id != &node_c.id));
@@ -1206,23 +1512,17 @@ mod tests {
         let snapshot = index.snapshot();
         assert_eq!(snapshot.vector_backend, "hnsw");
         assert!(snapshot.vector_runtime_ready);
-        assert_eq!(snapshot.vector_dimension, Some(2));
+        assert_eq!(snapshot.vector_dimensions.get("default"), Some(&2));
     }
 
     #[test]
     fn hnsw_vector_index_persists_and_warm_loads() {
         let mut node_a =
             NodeRecord::new(NodeId::new("node_a").expect("valid id"), "memory").expect("node");
-        node_a.properties.insert(
-            "embedding".to_owned(),
-            PropertyValue::FloatList(vec![1.0, 0.0]),
-        );
+        node_a.vectors.insert("default".to_owned(), vec![1.0, 0.0]);
         let mut node_b =
             NodeRecord::new(NodeId::new("node_b").expect("valid id"), "memory").expect("node");
-        node_b.properties.insert(
-            "embedding".to_owned(),
-            PropertyValue::FloatList(vec![0.0, 1.0]),
-        );
+        node_b.vectors.insert("default".to_owned(), vec![0.0, 1.0]);
         let config = VectorIndexConfig {
             backend: VectorIndexBackendConfig::Hnsw,
             exact_fallback_threshold: 1,
@@ -1257,7 +1557,7 @@ mod tests {
         let snapshot = loaded.snapshot();
         assert_eq!(snapshot.vector_backend, "hnsw");
         assert!(snapshot.vector_runtime_ready);
-        let hits = loaded.semantic_candidate_ids(&[1.0, 0.0], None, 1);
+        let hits = loaded.semantic_candidate_ids(&[1.0, 0.0], "default", None, 1, None);
         assert!(!hits.is_empty());
         assert_eq!(hits[0], node_a.id);
         assert!(hits.contains(&node_b.id));

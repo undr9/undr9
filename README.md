@@ -192,6 +192,8 @@ Runtime vector index behavior:
 - HNSW is the default runtime vector backend
 - switch back to exact search with `export UNDR9_VECTOR_INDEX_BACKEND=exact`
 - keep HNSW but tune global defaults with `UNDR9_VECTOR_INDEX_SEMANTIC_TOP_K` and `UNDR9_HNSW_EF_SEARCH`
+- vectors are stored only in the node `vectors` map; `properties.embedding` is no longer accepted
+- per-query `vector_name` selects the named vector space for `VectorSearch` and `RankedRetrieval`
 - per-query `top_k` can override the semantic candidate budget for `VectorSearch` and `RankedRetrieval`
 
 ### Verify
@@ -225,10 +227,11 @@ curl -X POST http://127.0.0.1:8080/v1/nodes \
   }'
 ```
 
-### Query With A `top_k` Override
+### Query With `vector_name` And `top_k`
 
 `limit` still controls how many ranked results are returned. `top_k` overrides the semantic
-candidate pool size for this request when the HNSW backend is active.
+candidate pool size for this request when the HNSW backend is active. `vector_name` selects the
+named vector space and defaults to `default`.
 
 ```bash
 curl -X POST http://127.0.0.1:8080/v1/query \
@@ -237,6 +240,7 @@ curl -X POST http://127.0.0.1:8080/v1/query \
   -d '{
     "VectorSearch": {
       "query_vector": [1.0, 0.0],
+      "vector_name": "default",
       "node_type": "memory",
       "limit": 10,
       "top_k": 50

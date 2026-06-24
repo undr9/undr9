@@ -99,6 +99,13 @@ impl NodeRecord {
         Ok(self)
     }
 
+    pub fn with_vector(mut self, name: impl Into<String>, values: Vec<f32>) -> Result<Self> {
+        let name = name.into();
+        validate_property_key(&name)?;
+        self.vectors.insert(name, values);
+        Ok(self)
+    }
+
     pub fn property(&self, key: &str) -> Option<&PropertyValue> {
         self.properties.get(key)
     }
@@ -116,10 +123,6 @@ impl NodeRecord {
 
     pub fn embedding(&self) -> Option<&[f32]> {
         self.vector("default")
-            .or_else(|| match self.property("embedding") {
-                Some(PropertyValue::FloatList(values)) => Some(values.as_slice()),
-                _ => None,
-            })
     }
 
     pub fn timestamp_ms(&self) -> Option<i64> {
@@ -135,12 +138,10 @@ impl NodeRecord {
     }
 
     pub fn normalize_memory_metadata(&mut self) -> Result<()> {
-        if self.vectors.is_empty() {
-            if let Some(PropertyValue::FloatList(values)) = self.properties.remove("embedding") {
-                self.vectors.insert("default".to_owned(), values);
-            }
-        } else {
-            self.properties.remove("embedding");
+        if self.properties.contains_key("embedding") {
+            return Err(Undr9Error::Validation(
+                "embedding is no longer supported in properties; send vectors.default or another named vector in the vectors map".to_owned(),
+            ));
         }
 
         if let Some(timestamp) = self.properties.get("timestamp") {
@@ -268,8 +269,8 @@ mod tests {
     fn exposes_retrieval_properties_through_helpers() {
         let node = super::NodeRecord::new(NodeId::new("node_1").expect("valid node id"), "memory")
             .expect("node should be created")
-            .with_property("embedding", super::PropertyValue::FloatList(vec![0.1, 0.2]))
-            .expect("embedding should be accepted")
+            .with_vector("default", vec![0.1, 0.2])
+            .expect("vector should be accepted")
             .with_property("timestamp", super::PropertyValue::Integer(123))
             .expect("timestamp should be accepted")
             .with_property("importance", super::PropertyValue::Float(0.8))
@@ -284,20 +285,38 @@ mod tests {
     }
 
     #[test]
-    fn normalizes_default_vector_from_legacy_embedding_property() {
+    fn rejects_legacy_embedding_property() {
         let mut node = super::NodeRecord::new(
             NodeId::new("tenant_a:node_1").expect("valid node id"),
             "memory",
         )
         .expect("node should be created")
         .with_property("embedding", super::PropertyValue::FloatList(vec![0.4, 0.6]))
-        .expect("embedding should be accepted");
+        .expect("property should be accepted");
 
-        node.normalize_memory_metadata()
-            .expect("normalization should succeed");
+        let error = node
+            .normalize_memory_metadata()
+            .expect_err("legacy embedding property should be rejected");
+        assert!(error.to_string().contains("no longer supported"));
+    }
+
+    #[test]
+    fn supports_multiple_named_vectors() {
+        let node = super::NodeRecord::new(
+            NodeId::new("tenant_a:node_1").expect("valid node id"),
+            "memory",
+        )
+        .expect("node should be created")
+        .with_vector("default", vec![0.4, 0.6])
+        .expect("default vector should be accepted")
+        .with_vector("unique_key", vec![0.9, 0.1])
+        .expect("named vector should be accepted");
 
         assert_eq!(node.namespace(), Some("tenant_a"));
-        assert_eq!(node.vector("default"), Some([0.4_f32, 0.6_f32].as_slice()));
-        assert!(!node.properties.contains_key("embedding"));
+        assert_eq!(node.embedding(), Some([0.4_f32, 0.6_f32].as_slice()));
+        assert_eq!(
+            node.vector("unique_key"),
+            Some([0.9_f32, 0.1_f32].as_slice())
+        );
     }
 }

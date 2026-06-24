@@ -3405,8 +3405,8 @@ mod tests {
                     "memory",
                 )
                 .expect("node should build")
-                .with_property("embedding", PropertyValue::FloatList(vec![1.0]))
-                .expect("embedding should build");
+                .with_vector("default", vec![1.0])
+                .expect("vector should build");
                 database.upsert_node(node).expect("node should insert");
             }
         }
@@ -3446,6 +3446,7 @@ mod tests {
                         serde_json::to_vec(&QueryRequest::VectorSearch {
                             query_vector: vec![1.0],
                             node_type: Some("memory".to_owned()),
+                            vector_name: None,
                             limit: 600,
                             top_k: None,
                         })
@@ -3470,6 +3471,7 @@ mod tests {
                         serde_json::to_vec(&QueryRequest::VectorSearch {
                             query_vector: vec![1.0],
                             node_type: Some("memory".to_owned()),
+                            vector_name: None,
                             limit: 600,
                             top_k: None,
                         })
@@ -3571,20 +3573,24 @@ mod tests {
             "node_type": "memory",
             "properties": {
                 "unique_key": {"kind":"String","value":"alpha"},
-                "embedding": {"kind":"FloatList","value":[1.0, 0.0]},
                 "timestamp": {"kind":"Integer","value":1000},
                 "importance": {"kind":"Float","value":0.9},
                 "confidence": {"kind":"Float","value":0.8}
+            },
+            "vectors": {
+                "default": [1.0, 0.0]
             }
         });
         let node_b = serde_json::json!({
             "id": "node_b",
             "node_type": "memory",
             "properties": {
-                "embedding": {"kind":"FloatList","value":[0.7, 0.3]},
                 "timestamp": {"kind":"Integer","value":1100},
                 "importance": {"kind":"Float","value":0.6},
                 "confidence": {"kind":"Float","value":0.7}
+            },
+            "vectors": {
+                "default": [0.7, 0.3]
             }
         });
         let edge = serde_json::json!({
@@ -3749,6 +3755,7 @@ mod tests {
         let vector_search = serde_json::to_vec(&QueryRequest::VectorSearch {
             query_vector: vec![1.0, 0.0],
             node_type: Some("memory".to_owned()),
+            vector_name: None,
             limit: 2,
             top_k: None,
         })
@@ -3786,6 +3793,7 @@ mod tests {
             edge_type: Some("relates_to".to_owned()),
             from_epoch_ms: Some(900),
             to_epoch_ms: Some(10_000),
+            vector_name: None,
             limit: 2,
             top_k: None,
             now_epoch_ms: 1_200,

@@ -83,8 +83,8 @@ Expected readiness response:
 ### Query With Per-Request `top_k`
 
 `top_k` is a query-level override for the semantic candidate budget used by `VectorSearch`
-and `RankedRetrieval`. It does not change the backend globally, and it does not replace the
-response `limit`.
+and `RankedRetrieval`. `vector_name` selects the named vector space and defaults to `default`.
+These do not change the backend globally, and they do not replace the response `limit`.
 
 ```bash
 curl -X POST http://127.0.0.1:8080/v1/query \
@@ -93,6 +93,7 @@ curl -X POST http://127.0.0.1:8080/v1/query \
   -d '{
     "RankedRetrieval": {
       "query_vector": [1.0, 0.0],
+      "vector_name": "default",
       "reference_node_id": "node_a",
       "edge_type": "relates_to",
       "from_epoch_ms": 1710000000000,
@@ -103,6 +104,25 @@ curl -X POST http://127.0.0.1:8080/v1/query \
       "retrieval_profile": "v1-default"
     }
   }'
+```
+
+Node writes should place vectors only in the `vectors` map, for example:
+
+```json
+{
+  "id": "node_a",
+  "node_type": "memory",
+  "properties": {
+    "unique_key": {
+      "kind": "String",
+      "value": "alpha"
+    }
+  },
+  "vectors": {
+    "default": [1.0, 0.0],
+    "summary": [0.8, 0.2]
+  }
+}
 ```
 
 ### Create A Test Node

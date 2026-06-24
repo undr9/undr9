@@ -14,6 +14,7 @@ const DEFAULT_RESULT_LIMIT: usize = 100;
 const DEFAULT_QUERY_TIMEOUT_MS: u64 = 5_000;
 const MAX_RESULT_LIMIT: usize = 1_000;
 const MAX_QUERY_TIMEOUT_MS: u64 = 30_000;
+const DEFAULT_VECTOR_NAME: &str = "default";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum QueryRequest {
@@ -60,6 +61,8 @@ pub enum QueryRequest {
     VectorSearch {
         query_vector: Vec<f32>,
         node_type: Option<String>,
+        #[serde(default)]
+        vector_name: Option<String>,
         limit: usize,
         #[serde(default)]
         top_k: Option<usize>,
@@ -70,6 +73,8 @@ pub enum QueryRequest {
         edge_type: Option<String>,
         from_epoch_ms: Option<i64>,
         to_epoch_ms: Option<i64>,
+        #[serde(default)]
+        vector_name: Option<String>,
         limit: usize,
         #[serde(default)]
         top_k: Option<usize>,
@@ -128,6 +133,7 @@ pub struct GraphMutation {
 #[derive(Debug, Clone, Copy)]
 pub struct SemanticCandidateQuery<'a> {
     query_vector: &'a [f32],
+    vector_name: &'a str,
     node_type: Option<&'a str>,
     limit: usize,
     top_k_override: Option<usize>,
@@ -150,7 +156,10 @@ pub trait GraphView {
         from_epoch_ms: i64,
         to_epoch_ms: i64,
     ) -> Box<dyn Iterator<Item = NodeId> + 'a>;
-    fn vector_candidate_ids_iter<'a>(&'a self) -> Box<dyn Iterator<Item = NodeId> + 'a>;
+    fn vector_candidate_ids_iter<'a>(
+        &'a self,
+        vector_name: &'a str,
+    ) -> Box<dyn Iterator<Item = NodeId> + 'a>;
     fn semantic_candidate_ids_iter<'a>(
         &'a self,
         query: SemanticCandidateQuery<'a>,
@@ -215,8 +224,11 @@ impl GraphView for GraphSnapshot {
         )
     }
 
-    fn vector_candidate_ids_iter<'a>(&'a self) -> Box<dyn Iterator<Item = NodeId> + 'a> {
-        Box::new(self.indexes.vector_candidate_ids_iter().cloned())
+    fn vector_candidate_ids_iter<'a>(
+        &'a self,
+        vector_name: &'a str,
+    ) -> Box<dyn Iterator<Item = NodeId> + 'a> {
+        Box::new(self.indexes.vector_candidate_ids_iter(vector_name).cloned())
     }
 
     fn semantic_candidate_ids_iter<'a>(
@@ -227,6 +239,7 @@ impl GraphView for GraphSnapshot {
             self.indexes
                 .semantic_candidate_ids(
                     query.query_vector,
+                    query.vector_name,
                     query.node_type,
                     query.limit,
                     query.top_k_override,
@@ -354,14 +367,17 @@ impl GraphView for OverlayGraphView<'_> {
         Box::new(node_ids.into_iter())
     }
 
-    fn vector_candidate_ids_iter<'a>(&'a self) -> Box<dyn Iterator<Item = NodeId> + 'a> {
+    fn vector_candidate_ids_iter<'a>(
+        &'a self,
+        vector_name: &'a str,
+    ) -> Box<dyn Iterator<Item = NodeId> + 'a> {
         let mut node_ids = self
             .base
-            .vector_candidate_ids_iter()
+            .vector_candidate_ids_iter(vector_name)
             .filter(|node_id| {
                 self.get_node(node_id)
                     .as_ref()
-                    .and_then(NodeRecord::embedding)
+                    .and_then(|node| node.vector(vector_name))
                     .is_some()
             })
             .collect::<BTreeSet<_>>();
@@ -369,7 +385,7 @@ impl GraphView for OverlayGraphView<'_> {
             self.mutation
                 .added_nodes
                 .values()
-                .filter(|node| node.embedding().is_some())
+                .filter(|node| node.vector(vector_name).is_some())
                 .map(|node| node.id.clone()),
         );
         Box::new(node_ids.into_iter())
@@ -386,10 +402,10 @@ impl GraphView for OverlayGraphView<'_> {
             Some(node_type) => Box::new(self.node_ids_by_type(node_type).filter(move |node_id| {
                 self.get_node(node_id)
                     .as_ref()
-                    .and_then(NodeRecord::embedding)
+                    .and_then(|node| node.vector(query.vector_name))
                     .is_some()
             })),
-            None => self.vector_candidate_ids_iter(),
+            None => self.vector_candidate_ids_iter(query.vector_name),
         }
     }
 
@@ -590,6 +606,7 @@ impl Planner {
             QueryRequest::VectorSearch {
                 query_vector,
                 node_type,
+                vector_name,
                 limit,
                 top_k,
             } => {
@@ -600,6 +617,14 @@ impl Planner {
                     field: "vector_dimensions".to_owned(),
                     value: PropertyValue::Integer(query_vector.len() as i64),
                 }];
+                filters.push(QueryFilter {
+                    field: "vector_name".to_owned(),
+                    value: PropertyValue::String(
+                        vector_name
+                            .clone()
+                            .unwrap_or_else(|| DEFAULT_VECTOR_NAME.to_owned()),
+                    ),
+                });
                 if let Some(node_type) = node_type {
                     filters.push(QueryFilter {
                         field: "node_type".to_owned(),
@@ -630,6 +655,7 @@ impl Planner {
                 reference_node_id,
                 from_epoch_ms,
                 to_epoch_ms,
+                vector_name,
                 limit,
                 top_k,
                 ..
@@ -654,6 +680,14 @@ impl Planner {
                     field: "limit".to_owned(),
                     value: PropertyValue::Integer(i64::try_from(limit).unwrap_or(i64::MAX)),
                 }];
+                filters.push(QueryFilter {
+                    field: "vector_name".to_owned(),
+                    value: PropertyValue::String(
+                        vector_name
+                            .clone()
+                            .unwrap_or_else(|| DEFAULT_VECTOR_NAME.to_owned()),
+                    ),
+                });
                 if let Some(top_k) = top_k {
                     filters.push(QueryFilter {
                         field: "top_k".to_owned(),
@@ -825,11 +859,18 @@ impl Executor {
             QueryRequest::VectorSearch {
                 query_vector,
                 node_type,
+                vector_name,
                 limit,
                 top_k,
             } => {
-                let ranked_results =
-                    vector_search(snapshot, query_vector, node_type.as_deref(), *limit, *top_k);
+                let ranked_results = vector_search(
+                    snapshot,
+                    query_vector,
+                    vector_name.as_deref().unwrap_or(DEFAULT_VECTOR_NAME),
+                    node_type.as_deref(),
+                    *limit,
+                    *top_k,
+                );
                 QueryExecution::from_response(QueryResponse {
                     plan_kind: plan.kind,
                     nodes: ranked_results
@@ -848,6 +889,7 @@ impl Executor {
                 edge_type,
                 from_epoch_ms,
                 to_epoch_ms,
+                vector_name,
                 limit,
                 top_k,
                 now_epoch_ms,
@@ -858,6 +900,7 @@ impl Executor {
                     snapshot,
                     RankedRetrievalParams {
                         query_vector: query_vector.as_deref(),
+                        vector_name: vector_name.as_deref().unwrap_or(DEFAULT_VECTOR_NAME),
                         reference_node_id: reference_node_id.as_ref(),
                         edge_type: edge_type.as_deref(),
                         from_epoch_ms: *from_epoch_ms,
@@ -1242,6 +1285,7 @@ fn shortest_path(
 fn vector_search(
     snapshot: &dyn GraphView,
     query_vector: &[f32],
+    vector_name: &str,
     node_type: Option<&str>,
     limit: usize,
     top_k_override: Option<usize>,
@@ -1251,6 +1295,7 @@ fn vector_search(
         snapshot,
         SemanticCandidateQuery {
             query_vector,
+            vector_name,
             node_type,
             limit,
             top_k_override,
@@ -1259,7 +1304,7 @@ fn vector_search(
     for result in candidate_ids
         .filter_map(|node_id| snapshot.get_node(&node_id))
         .filter_map(|node| {
-            let embedding = node.embedding()?;
+            let embedding = node.vector(vector_name)?;
             let semantic =
                 MemoryRanker::cosine_similarity(query_vector, embedding).unwrap_or_default();
             Some(RankedNodeResult {
@@ -1282,6 +1327,7 @@ fn vector_search(
 
 struct RankedRetrievalParams<'a> {
     query_vector: Option<&'a [f32]>,
+    vector_name: &'a str,
     reference_node_id: Option<&'a NodeId>,
     edge_type: Option<&'a str>,
     from_epoch_ms: Option<i64>,
@@ -1311,7 +1357,7 @@ fn ranked_retrieval(
             let semantic = params
                 .query_vector
                 .and_then(|query_vector| {
-                    node.embedding().and_then(|embedding| {
+                    node.vector(params.vector_name).and_then(|embedding| {
                         MemoryRanker::cosine_similarity(query_vector, embedding)
                     })
                 })
@@ -1362,6 +1408,7 @@ fn ranked_retrieval_candidates<'a>(
             snapshot,
             SemanticCandidateQuery {
                 query_vector,
+                vector_name: params.vector_name,
                 node_type: None,
                 limit: params.limit,
                 top_k_override: params.top_k_override,
@@ -1849,8 +1896,11 @@ mod tests {
                 .node_ids_in_time_range_iter(from_epoch_ms, to_epoch_ms)
         }
 
-        fn vector_candidate_ids_iter<'a>(&'a self) -> Box<dyn Iterator<Item = NodeId> + 'a> {
-            self.base.vector_candidate_ids_iter()
+        fn vector_candidate_ids_iter<'a>(
+            &'a self,
+            vector_name: &'a str,
+        ) -> Box<dyn Iterator<Item = NodeId> + 'a> {
+            self.base.vector_candidate_ids_iter(vector_name)
         }
 
         fn semantic_candidate_ids_iter<'a>(
@@ -1899,6 +1949,7 @@ mod tests {
             edge_type: None,
             from_epoch_ms: None,
             to_epoch_ms: None,
+            vector_name: None,
             limit: 5,
             top_k: None,
             now_epoch_ms: 100,
@@ -1914,6 +1965,7 @@ mod tests {
         let request = super::QueryRequest::VectorSearch {
             query_vector: vec![1.0, 0.0],
             node_type: Some("memory".to_owned()),
+            vector_name: None,
             limit: 5,
             top_k: Some(25),
         };
@@ -2142,10 +2194,7 @@ mod tests {
     fn executes_temporal_vector_and_ranked_retrieval_queries() {
         let mut node_a =
             NodeRecord::new(NodeId::new("node_a").expect("valid node id"), "memory").expect("node");
-        node_a.properties.insert(
-            "embedding".to_owned(),
-            PropertyValue::FloatList(vec![1.0, 0.0]),
-        );
+        node_a.vectors.insert("default".to_owned(), vec![1.0, 0.0]);
         node_a
             .properties
             .insert("timestamp".to_owned(), PropertyValue::Integer(1_000));
@@ -2158,10 +2207,7 @@ mod tests {
 
         let mut node_b =
             NodeRecord::new(NodeId::new("node_b").expect("valid node id"), "memory").expect("node");
-        node_b.properties.insert(
-            "embedding".to_owned(),
-            PropertyValue::FloatList(vec![0.8, 0.2]),
-        );
+        node_b.vectors.insert("default".to_owned(), vec![0.8, 0.2]);
         node_b
             .properties
             .insert("timestamp".to_owned(), PropertyValue::Integer(1_100));
@@ -2174,10 +2220,7 @@ mod tests {
 
         let mut node_c =
             NodeRecord::new(NodeId::new("node_c").expect("valid node id"), "memory").expect("node");
-        node_c.properties.insert(
-            "embedding".to_owned(),
-            PropertyValue::FloatList(vec![0.0, 1.0]),
-        );
+        node_c.vectors.insert("default".to_owned(), vec![0.0, 1.0]);
         node_c
             .properties
             .insert("timestamp".to_owned(), PropertyValue::Integer(4_000_000));
@@ -2236,6 +2279,7 @@ mod tests {
             &super::QueryRequest::VectorSearch {
                 query_vector: vec![1.0, 0.0],
                 node_type: Some("memory".to_owned()),
+                vector_name: None,
                 limit: 2,
                 top_k: None,
             },
@@ -2252,6 +2296,7 @@ mod tests {
                 edge_type: Some("relates_to".to_owned()),
                 from_epoch_ms: Some(900),
                 to_epoch_ms: Some(10_000),
+                vector_name: None,
                 limit: 3,
                 top_k: None,
                 now_epoch_ms: 1_200,
@@ -2271,10 +2316,7 @@ mod tests {
     fn ranked_retrieval_unions_semantic_and_structural_candidates() {
         let mut node_a =
             NodeRecord::new(NodeId::new("node_a").expect("valid node id"), "memory").expect("node");
-        node_a.properties.insert(
-            "embedding".to_owned(),
-            PropertyValue::FloatList(vec![1.0, 0.0]),
-        );
+        node_a.vectors.insert("default".to_owned(), vec![1.0, 0.0]);
         node_a
             .properties
             .insert("timestamp".to_owned(), PropertyValue::Integer(1_000));
@@ -2287,10 +2329,7 @@ mod tests {
 
         let mut node_b =
             NodeRecord::new(NodeId::new("node_b").expect("valid node id"), "memory").expect("node");
-        node_b.properties.insert(
-            "embedding".to_owned(),
-            PropertyValue::FloatList(vec![0.0, 1.0]),
-        );
+        node_b.vectors.insert("default".to_owned(), vec![0.0, 1.0]);
         node_b
             .properties
             .insert("timestamp".to_owned(), PropertyValue::Integer(1_050));
@@ -2333,6 +2372,7 @@ mod tests {
             &graph_view,
             super::RankedRetrievalParams {
                 query_vector: Some(&[1.0, 0.0]),
+                vector_name: "default",
                 reference_node_id: Some(&node_a.id),
                 edge_type: Some("relates_to"),
                 from_epoch_ms: Some(900),
@@ -2476,12 +2516,9 @@ mod tests {
                 "memory",
             )
             .expect("node should build");
-            node.properties.insert(
-                "embedding".to_owned(),
-                PropertyValue::FloatList(vec![
-                    1.0 - (index as f32 / 1_000.0),
-                    index as f32 / 1_000.0,
-                ]),
+            node.vectors.insert(
+                "default".to_owned(),
+                vec![1.0 - (index as f32 / 1_000.0), index as f32 / 1_000.0],
             );
             node.properties.insert(
                 "timestamp".to_owned(),
@@ -2521,6 +2558,7 @@ mod tests {
                 edge_type: Some("relates_to".to_owned()),
                 from_epoch_ms: Some(1_000),
                 to_epoch_ms: Some(2_000),
+                vector_name: None,
                 limit: 20,
                 top_k: None,
                 now_epoch_ms: 2_000,

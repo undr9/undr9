@@ -65,7 +65,22 @@ Request body:
     "unique_key": {
       "kind": "String",
       "value": "alpha"
+    },
+    "timestamp": {
+      "kind": "Integer",
+      "value": 1720000000000
+    },
+    "importance": {
+      "kind": "Float",
+      "value": 0.9
+    },
+    "confidence": {
+      "kind": "Float",
+      "value": 0.85
     }
+  },
+  "vectors": {
+    "default": [0.12, 0.44, 0.31, 0.78]
   }
 }
 ```
@@ -122,10 +137,13 @@ Supported query payloads:
 
 Milestone 3 retrieval signals use the following reserved node properties:
 
-- `embedding`: `FloatList`
 - `timestamp`: `Integer` epoch milliseconds
 - `importance`: `Float` or `Integer`
 - `confidence`: `Float` or `Integer`
+
+Vector data is stored only in the node `vectors` map. `properties.embedding` is no longer
+accepted. The default retrieval vector is `vectors.default`, and clients can store additional
+named vectors such as `vectors.title`, `vectors.summary`, or `vectors.unique_key`.
 
 #### Exact Lookup By Node Id
 
@@ -201,11 +219,17 @@ Milestone 3 retrieval signals use the following reserved node properties:
 {
   "VectorSearch": {
     "query_vector": [1.0, 0.0],
+    "vector_name": "default",
     "node_type": "memory",
-    "limit": 5
+    "limit": 10,
+    "top_k": 50
   }
 }
 ```
+
+`vector_name` selects which named vector space to search. `limit` controls the number of final
+results returned. `top_k` optionally overrides the semantic candidate pool size before final
+ranking.
 
 #### Ranked Retrieval
 
@@ -213,15 +237,21 @@ Milestone 3 retrieval signals use the following reserved node properties:
 {
   "RankedRetrieval": {
     "query_vector": [1.0, 0.0],
+    "vector_name": "default",
     "reference_node_id": "node_a",
     "edge_type": "relates_to",
-    "from_epoch_ms": 1000,
-    "to_epoch_ms": 5000,
-    "limit": 5,
-    "now_epoch_ms": 5200
+    "from_epoch_ms": 1710000000000,
+    "to_epoch_ms": 1719999999999,
+    "limit": 10,
+    "top_k": 50,
+    "now_epoch_ms": 1720000000000,
+    "retrieval_profile": "v1-default"
   }
 }
 ```
+
+`RankedRetrieval` uses `vector_name` only for the semantic portion of hybrid ranking. Structural,
+temporal, importance, and confidence scoring remain unchanged.
 
 Example response:
 
