@@ -279,6 +279,60 @@ Current serve options:
 - `--bind <BIND>`: listen address, default `127.0.0.1:8080`
 - `--node-id <NODE_ID>`: local node identifier, default `node-1`
 
+### Runtime Environment Variables
+
+Boolean environment variables accept `true`/`false`, `yes`/`no`, `on`/`off`, and `1`/`0`.
+
+#### Server
+
+- `UNDR9_BIND_ADDRESS`: listen address for the HTTP server. Default `127.0.0.1:8080`.
+- `UNDR9_REQUEST_TIMEOUT_MS`: request timeout in milliseconds. Default `5000`.
+- `UNDR9_MAX_REQUEST_BODY_BYTES`: maximum accepted request body size in bytes. Default `1048576`.
+
+#### Storage And WAL
+
+- `UNDR9_STORAGE_ROOT`: storage root directory. Default `./data`.
+- `UNDR9_STORAGE_CREATE_IF_MISSING`: create the storage root on startup when missing. Default `true`.
+- `UNDR9_WAL_SEGMENT_SIZE_BYTES`: WAL segment rotation size in bytes. Default `67108864`.
+- `UNDR9_WAL_MAX_REPLAY_BYTES`: guardrail for WAL replay volume during open or recovery. Default `536870912`.
+- `UNDR9_WAL_FSYNC_ON_WRITE`: fsync each WAL append for stronger durability. Default `true`.
+
+#### Authentication
+
+- `UNDR9_AUTH_ENABLED`: enable API key authentication. Default `true`.
+- `UNDR9_BOOTSTRAP_ADMIN_USERNAME`: bootstrap admin username used by auth metadata. Default `admin`.
+- `UNDR9_ADMIN_API_KEY`: admin API key. Required when auth is enabled.
+- `UNDR9_WRITER_API_KEY`: writer API key. Required when auth is enabled.
+- `UNDR9_READER_API_KEY`: reader API key. Required when auth is enabled.
+
+#### Maintenance
+
+- `UNDR9_MAINTENANCE_MAX_NODES`: largest node count maintenance endpoints will process. Default `5000000`.
+- `UNDR9_MAINTENANCE_MAX_EDGES`: largest edge count maintenance endpoints will process. Default `10000000`.
+
+#### Vector Index
+
+- `UNDR9_VECTOR_INDEX_BACKEND`: vector backend selection, `hnsw` or `exact`. Default `hnsw`.
+- `UNDR9_VECTOR_INDEX_EXACT_FALLBACK_THRESHOLD`: candidate-count threshold below which the exact path is used. Default `50000`.
+- `UNDR9_VECTOR_INDEX_SEMANTIC_TOP_K`: default semantic candidate budget. Default `100`.
+- `UNDR9_HNSW_M`: HNSW graph connectivity parameter. Default `16`.
+- `UNDR9_HNSW_EF_CONSTRUCTION`: HNSW build-time search breadth. Default `200`.
+- `UNDR9_HNSW_EF_SEARCH`: HNSW query-time search breadth. Default `64`.
+
+#### Observability And Audit
+
+- `UNDR9_LOG_LEVEL`: runtime log filter. Default `info`.
+- `UNDR9_METRICS_ENABLED`: enable or disable `/metrics`. Default `true`.
+- `UNDR9_TRACING_ENABLED`: enable tracing bootstrap. Default `true`.
+- `UNDR9_TRACING_JSON`: emit JSON logs suitable for log pipelines. Default `true`.
+- `UNDR9_OTLP_ENABLED`: enable OTLP trace export. Default `false`.
+- `UNDR9_OTLP_PROTOCOL`: OTLP transport, usually `grpc` or `http/protobuf`. Default `grpc`.
+- `UNDR9_OTLP_ENDPOINT`: OTLP collector or vendor endpoint. Default `http://127.0.0.1:4317`.
+- `UNDR9_OTLP_HEADERS`: comma-separated `key=value` headers for OTLP auth or tenancy. Default empty.
+- `UNDR9_OTLP_TIMEOUT_MS`: OTLP exporter timeout in milliseconds. Default `10000`.
+- `UNDR9_AUDIT_LOG_RETENTION_ENTRIES`: retained audit log entries in memory/export surface. Default `10000`.
+- `UNDR9_AUDIT_LOG_EXPORT_LIMIT`: maximum audit records returned in one export-style response. Default `1000`.
+
 ### Useful CLI Commands
 
 ```bash
