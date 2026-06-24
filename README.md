@@ -118,16 +118,20 @@ The following data represents empirical, automated testing evidence verified on 
 ### Latency Profiles by Scenario
 | Scenario Name | 100k Scale Latency | 1M Scale Latency | 10M Scale Latency | Primary Performance Driver |
 | :--- | :--- | :--- | :--- | :--- |
-| **`storage_upsert`** | `4.05 s` (single batch) | `33.15 s` (single batch) | `363.42 s` (single batch) | WAL append volume, serialization, and fsync-heavy write throughput |
-| **`storage_delete`** | `4.92 s` | `43.18 s` | `513.38 s` | Tombstone-heavy mutation volume plus WAL rewrite cost |
-| **`wal_recovery`** | `8.70 s` | `67.10 s` | `730.44 s` | WAL replay loop, manifest validation, and full state rebuild on open |
-| **`exact_lookup`** | `192 us` | `Not yet published` | `Not yet published` | Direct id or unique-key index lookup with minimal plan overhead |
-| **`list_neighbors_1_hop`**| `93 us` | `Not yet published` | `Not yet published` | Adjacency index bucket scan for a single hop |
-| **`traverse_5_hops`** | `270 us` | `Not yet published` | `Not yet published` | Bounded BFS over adjacency and reverse-adjacency indexes |
-| **`shortest_path`** | `687 us` | `Not yet published` | `Not yet published` | Frontier expansion and visited-set maintenance across graph hops |
-| **`temporal_range`** | `4,195 us` | `Not yet published` | `Not yet published` | Timestamp-bucket scan through the temporal index |
-| **`vector_search`** | `456,501 us` | `Not yet published` | `Not yet published` | Linear scan across vector candidates with cosine similarity scoring |
-| **`ranked_retrieval`** | `307,772 us` | `Not yet published` | `Not yet published` | Hybrid structural, semantic, temporal, importance, and confidence scoring |
+| **`storage_upsert`** | `4.13 s` (single batch) | `33.15 s` (single batch) | `363.42 s` (single batch) | WAL append volume, serialization, and fsync-heavy write throughput |
+| **`storage_delete`** | `4.91 s` | `43.18 s` | `513.38 s` | Tombstone-heavy mutation volume plus WAL rewrite cost |
+| **`wal_recovery`** | `8.66 s` | `67.10 s` | `730.44 s` | WAL replay loop, manifest validation, and full state rebuild on open |
+| **`exact_lookup`** | `196 us` | `Not yet published` | `Not yet published` | Direct id or unique-key index lookup with minimal plan overhead |
+| **`list_neighbors_1_hop`**| `183 us` | `Not yet published` | `Not yet published` | Adjacency index bucket scan for a single hop |
+| **`traverse_5_hops`** | `432 us` | `Not yet published` | `Not yet published` | Bounded BFS over adjacency and reverse-adjacency indexes |
+| **`shortest_path`** | `1,431 us` | `Not yet published` | `Not yet published` | Frontier expansion and visited-set maintenance across graph hops |
+| **`temporal_range`** | `4,879 us` | `Not yet published` | `Not yet published` | Timestamp-bucket scan through the temporal index |
+| **`vector_search_exact`** | `416,775 us` | `Not yet published` | `Not yet published` | Exact cosine scoring across all eligible vector candidates |
+| **`vector_search_hnsw`** | `29,773 us` | `Not yet published` | `Not yet published` | HNSW ANN candidate generation with final vector scoring over the returned set |
+| **`ranked_retrieval_exact`** | `411,305 us` | `Not yet published` | `Not yet published` | Full hybrid retrieval with exact semantic candidate generation |
+| **`ranked_retrieval_hnsw`** | `1,652 us` | `Not yet published` | `Not yet published` | HNSW semantic prefilter unioned with structural candidates before hybrid reranking |
+
+At `100k`, the published HNSW benchmark artifact also records a persisted vector-index sidecar footprint of `5,892,366` bytes, with `183.85 s` build time and `126.10 s` warm-load time in the current benchmark environment. Larger-scale HNSW latency and footprint evidence is not yet published.
 
 ---
 

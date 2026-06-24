@@ -1,14 +1,16 @@
 {
-  "generated_at_ms": 1782220628232,
+  "generated_at_ms": 1782295156081,
   "host_os": "macos",
   "host_arch": "aarch64",
   "timing_unit": "microseconds",
   "iterations": 1,
+  "scenario_profile": "full",
+  "workload_profile": "standard",
   "scales": [
     {
       "node_count": 100000,
       "edge_count": 99999,
-      "peak_rss_bytes": 1005748224,
+      "peak_rss_bytes": 886849536,
       "storage_footprint": {
         "wal_bytes": 40460493,
         "snapshot_bytes": 0,
@@ -16,152 +18,183 @@
         "index_bytes": 0,
         "total_bytes": 40460745,
         "post_compaction_total_bytes": 35158919,
-        "compaction_elapsed_us": 986042,
-        "recovery_elapsed_us": 1278839
+        "compaction_elapsed_us": 1024301,
+        "recovery_elapsed_us": 1225245
+      },
+      "vector_index_footprint": {
+        "hnsw_index_bytes": 5892366,
+        "hnsw_build_elapsed_us": 183851434,
+        "hnsw_reload_elapsed_us": 126099574
       },
       "scenarios": [
         {
           "name": "storage_upsert",
           "samples_us": [
-            4051823
+            4125187
           ],
-          "min_us": 4051823,
-          "p50_us": 4051823,
-          "p95_us": 4051823,
-          "p99_us": 4051823,
-          "max_us": 4051823,
-          "mean_us": 4051823.0,
-          "throughput_ops_per_sec": 0.24680248865757462
+          "min_us": 4125187,
+          "p50_us": 4125187,
+          "p95_us": 4125187,
+          "p99_us": 4125187,
+          "max_us": 4125187,
+          "mean_us": 4125187.0,
+          "throughput_ops_per_sec": 0.2424132530234387
         },
         {
           "name": "storage_delete",
           "samples_us": [
-            4924135
+            4914989
           ],
-          "min_us": 4924135,
-          "p50_us": 4924135,
-          "p95_us": 4924135,
-          "p99_us": 4924135,
-          "max_us": 4924135,
-          "mean_us": 4924135.0,
-          "throughput_ops_per_sec": 0.20308135337475516
+          "min_us": 4914989,
+          "p50_us": 4914989,
+          "p95_us": 4914989,
+          "p99_us": 4914989,
+          "max_us": 4914989,
+          "mean_us": 4914989.0,
+          "throughput_ops_per_sec": 0.20345925494441594
         },
         {
           "name": "wal_recovery",
           "samples_us": [
-            8702173
+            8660881
           ],
-          "min_us": 8702173,
-          "p50_us": 8702173,
-          "p95_us": 8702173,
-          "p99_us": 8702173,
-          "max_us": 8702173,
-          "mean_us": 8702173.0,
-          "throughput_ops_per_sec": 0.11491382669592985
+          "min_us": 8660881,
+          "p50_us": 8660881,
+          "p95_us": 8660881,
+          "p99_us": 8660881,
+          "max_us": 8660881,
+          "mean_us": 8660881.0,
+          "throughput_ops_per_sec": 0.11546169494766179
         },
         {
           "name": "exact_lookup",
           "samples_us": [
-            192
+            196
           ],
-          "min_us": 192,
-          "p50_us": 192,
-          "p95_us": 192,
-          "p99_us": 192,
-          "max_us": 192,
-          "mean_us": 192.0,
-          "throughput_ops_per_sec": 5208.333333333333
+          "min_us": 196,
+          "p50_us": 196,
+          "p95_us": 196,
+          "p99_us": 196,
+          "max_us": 196,
+          "mean_us": 196.0,
+          "throughput_ops_per_sec": 5102.040816326531
         },
         {
           "name": "list_neighbors_1_hop",
           "samples_us": [
-            93
+            183
           ],
-          "min_us": 93,
-          "p50_us": 93,
-          "p95_us": 93,
-          "p99_us": 93,
-          "max_us": 93,
-          "mean_us": 93.0,
-          "throughput_ops_per_sec": 10752.68817204301
+          "min_us": 183,
+          "p50_us": 183,
+          "p95_us": 183,
+          "p99_us": 183,
+          "max_us": 183,
+          "mean_us": 183.0,
+          "throughput_ops_per_sec": 5464.48087431694
         },
         {
           "name": "label_scan",
           "samples_us": [
-            21357
+            29776
           ],
-          "min_us": 21357,
-          "p50_us": 21357,
-          "p95_us": 21357,
-          "p99_us": 21357,
-          "max_us": 21357,
-          "mean_us": 21357.0,
-          "throughput_ops_per_sec": 46.823055672613194
+          "min_us": 29776,
+          "p50_us": 29776,
+          "p95_us": 29776,
+          "p99_us": 29776,
+          "max_us": 29776,
+          "mean_us": 29776.0,
+          "throughput_ops_per_sec": 33.584094572810315
         },
         {
           "name": "traverse_5_hops",
           "samples_us": [
-            270
+            432
           ],
-          "min_us": 270,
-          "p50_us": 270,
-          "p95_us": 270,
-          "p99_us": 270,
-          "max_us": 270,
-          "mean_us": 270.0,
-          "throughput_ops_per_sec": 3703.703703703704
+          "min_us": 432,
+          "p50_us": 432,
+          "p95_us": 432,
+          "p99_us": 432,
+          "max_us": 432,
+          "mean_us": 432.0,
+          "throughput_ops_per_sec": 2314.814814814815
         },
         {
           "name": "shortest_path",
           "samples_us": [
-            687
+            1431
           ],
-          "min_us": 687,
-          "p50_us": 687,
-          "p95_us": 687,
-          "p99_us": 687,
-          "max_us": 687,
-          "mean_us": 687.0,
-          "throughput_ops_per_sec": 1455.604075691412
+          "min_us": 1431,
+          "p50_us": 1431,
+          "p95_us": 1431,
+          "p99_us": 1431,
+          "max_us": 1431,
+          "mean_us": 1431.0,
+          "throughput_ops_per_sec": 698.8120195667366
         },
         {
           "name": "temporal_range",
           "samples_us": [
-            4195
+            4879
           ],
-          "min_us": 4195,
-          "p50_us": 4195,
-          "p95_us": 4195,
-          "p99_us": 4195,
-          "max_us": 4195,
-          "mean_us": 4195.0,
-          "throughput_ops_per_sec": 238.37902264600714
+          "min_us": 4879,
+          "p50_us": 4879,
+          "p95_us": 4879,
+          "p99_us": 4879,
+          "max_us": 4879,
+          "mean_us": 4879.0,
+          "throughput_ops_per_sec": 204.96003279360525
         },
         {
-          "name": "vector_search",
+          "name": "vector_search_exact",
           "samples_us": [
-            456501
+            416775
           ],
-          "min_us": 456501,
-          "p50_us": 456501,
-          "p95_us": 456501,
-          "p99_us": 456501,
-          "max_us": 456501,
-          "mean_us": 456501.0,
-          "throughput_ops_per_sec": 2.1905757052010837
+          "min_us": 416775,
+          "p50_us": 416775,
+          "p95_us": 416775,
+          "p99_us": 416775,
+          "max_us": 416775,
+          "mean_us": 416775.0,
+          "throughput_ops_per_sec": 2.3993761621978287
         },
         {
-          "name": "ranked_retrieval",
+          "name": "ranked_retrieval_exact",
           "samples_us": [
-            307772
+            411305
           ],
-          "min_us": 307772,
-          "p50_us": 307772,
-          "p95_us": 307772,
-          "p99_us": 307772,
-          "max_us": 307772,
-          "mean_us": 307772.0,
-          "throughput_ops_per_sec": 3.249158467956799
+          "min_us": 411305,
+          "p50_us": 411305,
+          "p95_us": 411305,
+          "p99_us": 411305,
+          "max_us": 411305,
+          "mean_us": 411305.0,
+          "throughput_ops_per_sec": 2.4312857854876553
+        },
+        {
+          "name": "vector_search_hnsw",
+          "samples_us": [
+            29773
+          ],
+          "min_us": 29773,
+          "p50_us": 29773,
+          "p95_us": 29773,
+          "p99_us": 29773,
+          "max_us": 29773,
+          "mean_us": 29773.0,
+          "throughput_ops_per_sec": 33.5874785879824
+        },
+        {
+          "name": "ranked_retrieval_hnsw",
+          "samples_us": [
+            1652
+          ],
+          "min_us": 1652,
+          "p50_us": 1652,
+          "p95_us": 1652,
+          "p99_us": 1652,
+          "max_us": 1652,
+          "mean_us": 1652.0,
+          "throughput_ops_per_sec": 605.3268765133172
         }
       ]
     }

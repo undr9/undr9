@@ -9,7 +9,7 @@ use im::OrdMap;
 use serde::Serialize;
 use tempfile::tempdir;
 use undr9_common::{EdgeId, NodeId};
-use undr9_config::AppConfig;
+use undr9_config::{AppConfig, VectorIndexBackendConfig, VectorIndexConfig};
 use undr9_core::{EdgeRecord, NodeRecord, PropertyValue};
 use undr9_index::{EdgeDirection, GraphIndex};
 use undr9_query::{Executor, GraphSnapshot, QueryRequest};
@@ -56,6 +56,7 @@ struct ScaleReport {
     edge_count: usize,
     peak_rss_bytes: Option<u64>,
     storage_footprint: StorageFootprintReport,
+    vector_index_footprint: Option<VectorIndexFootprintReport>,
     scenarios: Vec<ScenarioReport>,
 }
 
@@ -69,6 +70,13 @@ struct StorageFootprintReport {
     post_compaction_total_bytes: u64,
     compaction_elapsed_us: u128,
     recovery_elapsed_us: u128,
+}
+
+#[derive(Debug, Serialize)]
+struct VectorIndexFootprintReport {
+    hnsw_index_bytes: u64,
+    hnsw_build_elapsed_us: u128,
+    hnsw_reload_elapsed_us: u128,
 }
 
 #[derive(Debug, Serialize)]
@@ -167,12 +175,23 @@ fn run_scale(
     }
 
     let workload = build_workload(node_count, workload_profile)?;
-    let snapshot = if scenario_profile.includes_query_scenarios() {
-        Some(workload.snapshot())
+    let exact_snapshot = if scenario_profile.includes_query_scenarios() {
+        Some(workload.snapshot_with_vector_index_config(&benchmark_exact_vector_index_config()))
     } else {
         None
     };
+    let hnsw_snapshot =
+        if scenario_profile.includes_query_scenarios() && workload_profile.includes_vectors() {
+            Some(workload.snapshot_with_vector_index_config(&benchmark_hnsw_vector_index_config()))
+        } else {
+            None
+        };
     let storage_footprint = measure_storage_footprint(&workload)?;
+    let vector_index_footprint = if workload_profile.includes_vectors() {
+        Some(measure_vector_index_footprint(&workload)?)
+    } else {
+        None
+    };
     let mut scenarios = Vec::new();
 
     if scenario_profile.includes_storage_scenarios() {
@@ -187,7 +206,7 @@ fn run_scale(
         })?);
     }
 
-    if let Some(snapshot) = snapshot.as_ref() {
+    if let Some(snapshot) = exact_snapshot.as_ref() {
         scenarios.push(measure("exact_lookup", iterations, || {
             bench_exact_lookup(snapshot, &workload)
         })?);
@@ -207,12 +226,20 @@ fn run_scale(
             bench_temporal_range(snapshot)
         })?);
         if workload_profile.includes_vectors() {
-            scenarios.push(measure("vector_search", iterations, || {
+            scenarios.push(measure("vector_search_exact", iterations, || {
                 bench_vector_search(snapshot)
             })?);
-            scenarios.push(measure("ranked_retrieval", iterations, || {
+            scenarios.push(measure("ranked_retrieval_exact", iterations, || {
                 bench_ranked_retrieval(snapshot, &workload)
             })?);
+            if let Some(hnsw_snapshot) = hnsw_snapshot.as_ref() {
+                scenarios.push(measure("vector_search_hnsw", iterations, || {
+                    bench_vector_search(hnsw_snapshot)
+                })?);
+                scenarios.push(measure("ranked_retrieval_hnsw", iterations, || {
+                    bench_ranked_retrieval(hnsw_snapshot, &workload)
+                })?);
+            }
         }
     }
 
@@ -221,6 +248,7 @@ fn run_scale(
         edge_count: workload.edges.len(),
         peak_rss_bytes: current_process_peak_rss_bytes(),
         storage_footprint,
+        vector_index_footprint,
         scenarios,
     })
 }
@@ -244,6 +272,7 @@ fn run_streamed_storage_scale(node_count: usize, iterations: usize) -> BenchResu
         edge_count: node_count.saturating_sub(1),
         peak_rss_bytes: current_process_peak_rss_bytes(),
         storage_footprint,
+        vector_index_footprint: None,
         scenarios,
     })
 }
@@ -659,7 +688,7 @@ impl WorkloadProfile {
 }
 
 impl Workload {
-    fn snapshot(&self) -> GraphSnapshot {
+    fn snapshot_with_vector_index_config(&self, vector_index: &VectorIndexConfig) -> GraphSnapshot {
         GraphSnapshot {
             nodes: self
                 .nodes
@@ -673,7 +702,7 @@ impl Workload {
                 .cloned()
                 .map(|edge| (edge.id.clone(), edge))
                 .collect::<OrdMap<_, _>>(),
-            indexes: GraphIndex::rebuild(&self.nodes, &self.edges),
+            indexes: GraphIndex::rebuild_with_config(&self.nodes, &self.edges, vector_index),
         }
     }
 }
@@ -832,6 +861,70 @@ fn benchmark_storage_config(root_dir: PathBuf) -> AppConfig {
     config.storage.root_dir = root_dir;
     config.wal.max_replay_bytes = config.wal.max_replay_bytes.max(BENCHMARK_WAL_REPLAY_BYTES);
     config
+}
+
+fn benchmark_exact_vector_index_config() -> VectorIndexConfig {
+    let mut config = VectorIndexConfig::default();
+    config.backend = VectorIndexBackendConfig::Exact;
+    config
+}
+
+fn benchmark_hnsw_vector_index_config() -> VectorIndexConfig {
+    let mut config = VectorIndexConfig::default();
+    config.backend = VectorIndexBackendConfig::Hnsw;
+    // Force the benchmark to exercise the ANN backend even at small baseline scales.
+    config.exact_fallback_threshold = 1;
+    config
+}
+
+fn measure_vector_index_footprint(workload: &Workload) -> BenchResult<VectorIndexFootprintReport> {
+    let tempdir = tempdir()?;
+    let config = benchmark_storage_config(tempdir.path().join("data"));
+    let mut engine = StorageEngine::open(&config)?;
+    engine.upsert_nodes(workload.nodes.clone())?;
+    engine.upsert_edges(workload.edges.clone())?;
+
+    let layout = engine.layout().clone();
+    let vector_index_config = benchmark_hnsw_vector_index_config();
+
+    let build_started = Instant::now();
+    let index =
+        GraphIndex::rebuild_with_config(&workload.nodes, &workload.edges, &vector_index_config);
+    let hnsw_build_elapsed_us = build_started.elapsed().as_micros();
+    index.persist_vector_index(
+        &layout.vector_index_manifest_path(),
+        &layout.vector_index_graph_path(),
+        &layout.vector_index_vectors_path(),
+        engine.latest_applied_lsn(),
+    )?;
+
+    let hnsw_index_bytes = file_len_if_exists(&layout.vector_index_manifest_path())?
+        + file_len_if_exists(&layout.vector_index_graph_path())?
+        + file_len_if_exists(&layout.vector_index_vectors_path())?;
+
+    let reload_started = Instant::now();
+    let reloaded = GraphIndex::rebuild_with_config_and_vector_index_load(
+        &workload.nodes,
+        &workload.edges,
+        &vector_index_config,
+        Some(undr9_index::VectorIndexLoadConfig {
+            manifest_path: &layout.vector_index_manifest_path(),
+            graph_path: &layout.vector_index_graph_path(),
+            vectors_path: &layout.vector_index_vectors_path(),
+            expected_last_applied_lsn: engine.latest_applied_lsn(),
+        }),
+    );
+    let hnsw_reload_elapsed_us = reload_started.elapsed().as_micros();
+
+    if reloaded.snapshot().vector_backend != "hnsw" || !reloaded.snapshot().vector_runtime_ready {
+        return Err("vector index footprint benchmark failed to reload an HNSW runtime".into());
+    }
+
+    Ok(VectorIndexFootprintReport {
+        hnsw_index_bytes,
+        hnsw_build_elapsed_us,
+        hnsw_reload_elapsed_us,
+    })
 }
 
 fn parse_scenario_profile(raw: &str) -> BenchResult<ScenarioProfile> {

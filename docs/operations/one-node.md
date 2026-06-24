@@ -210,6 +210,15 @@ Benchmark output now records:
 - `peak_rss_bytes` for the benchmark process
 - per-scale storage footprint including WAL, snapshots, deltas, index bytes, compaction time, and recovery-open time
 - direct `exact_lookup` and `list_neighbors_1_hop` scenarios in addition to traversal and retrieval paths
+- separate exact and HNSW query timings for `vector_search` and `ranked_retrieval`
+- `vector_index_footprint` with `hnsw_index_bytes`, `hnsw_build_elapsed_us`, and `hnsw_reload_elapsed_us`
+
+Vector benchmark behavior:
+
+- `vector_search_exact` and `ranked_retrieval_exact` use the exact backend
+- `vector_search_hnsw` and `ranked_retrieval_hnsw` use the HNSW backend
+- the benchmark runner forces `exact_fallback_threshold=1` for HNSW runs so small baseline scales actually exercise the ANN backend
+- this override is benchmark-only and does not change the normal production defaults
 
 The runner defaults are:
 
@@ -224,7 +233,7 @@ The standard runner also accepts `UNDR9_BENCH_SCENARIO_PROFILE` and `UNDR9_BENCH
 Published artifacts:
 
 - `docs/operations/single-node-benchmark-baseline.json` for the repeatable small-scale baseline
-- `docs/operations/single-node-benchmark-100k.json` for a target-scale `100k` node single-pass benchmark run
+- `docs/operations/single-node-benchmark-100k.json` for a target-scale `100k` node single-pass benchmark run with exact-vs-HNSW vector query timings
 - `docs/operations/single-node-benchmark-1m-storage.json` for a `1M` node storage-only compact-profile benchmark run
 
 Large-scale storage benchmark runner:
