@@ -200,6 +200,135 @@ named vectors such as `vectors.title`, `vectors.summary`, or `vectors.unique_key
 }
 ```
 
+#### Filter Nodes
+
+`FilterNodes` provides database-side property filtering with an optional `label` prefilter. Use
+`label` for node type selection, and express predicate logic in the `where` clause with
+`eq`, `gt`, `gte`, `lt`, `lte`, `and`, and `or`.
+
+| Operator | Meaning                             | Example                     |
+| -------- | ----------------------------------- | --------------------------- |
+| `eq`     | Equal to                            | age = 25                    |
+| `gt`     | Greater than                        | age > 25                    |
+| `gte`    | Greater than or equal to            | age >= 25                   |
+| `lt`     | Less than                           | age < 25                    |
+| `lte`    | Less than or equal to               | age <= 25                   |
+| `and`    | Both conditions must be true        | age > 25 AND city = 'Delhi' |
+| `or`     | At least one condition must be true | age > 25 OR city = 'Delhi'  |
+
+
+```json
+{
+  "FilterNodes": {
+    "label": "user",
+    "where": {
+      "op": "or",
+      "conditions": [
+        {
+          "op": "gt",
+          "field": "score",
+          "value": {
+            "kind": "Integer",
+            "value": 90
+          }
+        },
+        {
+          "op": "eq",
+          "field": "unique_key",
+          "value": {
+            "kind": "String",
+            "value": "alice"
+          }
+        }
+      ]
+    },
+    "limit": 50
+  }
+}
+```
+
+Notes:
+
+- `label` maps to the node `node_type` field and is optional.
+- `eq` supports exact matching for property values and special fields `id` and `label`.
+- `gt`, `gte`, `lt`, and `lte` require numeric property values.
+- `and` and `or` accept a `conditions` array of nested predicates.
+
+Additional examples:
+
+Match a normal property exactly:
+
+```json
+{
+  "FilterNodes": {
+    "where": {
+      "op": "eq",
+      "field": "unique_key",
+      "value": {
+        "kind": "String",
+        "value": "alice"
+      }
+    },
+    "limit": 10
+  }
+}
+```
+
+Match the built-in node `id` exactly:
+
+```json
+{
+  "FilterNodes": {
+    "where": {
+      "op": "eq",
+      "field": "id",
+      "value": {
+        "kind": "String",
+        "value": "node_123"
+      }
+    },
+    "limit": 1
+  }
+}
+```
+
+Match the built-in node `label` exactly:
+
+```json
+{
+  "FilterNodes": {
+    "where": {
+      "op": "eq",
+      "field": "label",
+      "value": {
+        "kind": "String",
+        "value": "user"
+      }
+    },
+    "limit": 50
+  }
+}
+```
+
+Use the top-level `label` prefilter with a numeric property predicate:
+
+```json
+{
+  "FilterNodes": {
+    "label": "user",
+    "where": {
+      "op": "gt",
+      "field": "score",
+      "value": {
+        "kind": "Integer",
+        "value": 90
+      }
+    },
+    "limit": 50
+  }
+}
+```
+
 #### Temporal Range Search
 
 ```json

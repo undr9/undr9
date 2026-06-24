@@ -24,6 +24,13 @@ pub enum QueryRequest {
     GetNodeByUniqueKey {
         unique_key: String,
     },
+    FilterNodes {
+        #[serde(default)]
+        label: Option<String>,
+        #[serde(rename = "where")]
+        filter: FilterExpression,
+        limit: Option<usize>,
+    },
     ListNeighbors {
         node_id: NodeId,
         edge_type: Option<String>,
@@ -91,9 +98,22 @@ pub struct TraversalConstraints {
     pub node_labels: Vec<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "op", rename_all = "snake_case")]
+pub enum FilterExpression {
+    Eq { field: String, value: PropertyValue },
+    Gt { field: String, value: PropertyValue },
+    Gte { field: String, value: PropertyValue },
+    Lt { field: String, value: PropertyValue },
+    Lte { field: String, value: PropertyValue },
+    And { conditions: Vec<FilterExpression> },
+    Or { conditions: Vec<FilterExpression> },
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PlanKind {
     ExactLookup,
+    FilterScan,
     Traversal,
     ShortestPath,
     NeighborLookup,
@@ -495,6 +515,40 @@ impl Planner {
                     value: PropertyValue::String(unique_key.clone()),
                 }],
             },
+            QueryRequest::FilterNodes {
+                label,
+                filter,
+                limit,
+            } => {
+                validate_filter_expression(filter)?;
+                let mut filters = vec![QueryFilter {
+                    field: "limit".to_owned(),
+                    value: PropertyValue::Integer(
+                        i64::try_from(resolve_result_limit(*limit)?).unwrap_or(i64::MAX),
+                    ),
+                }];
+                if let Some(label) = label {
+                    if label.trim().is_empty() {
+                        return Err(Undr9Error::Validation(
+                            "filter label cannot be empty".to_owned(),
+                        ));
+                    }
+                    filters.push(QueryFilter {
+                        field: "label".to_owned(),
+                        value: PropertyValue::String(label.clone()),
+                    });
+                }
+                filters.push(QueryFilter {
+                    field: "predicate_count".to_owned(),
+                    value: PropertyValue::Integer(
+                        i64::try_from(filter_expression_leaf_count(filter)).unwrap_or(i64::MAX),
+                    ),
+                });
+                QueryPlan {
+                    kind: PlanKind::FilterScan,
+                    filters,
+                }
+            }
             QueryRequest::ListNeighbors { limit, .. } => QueryPlan {
                 kind: PlanKind::NeighborLookup,
                 filters: vec![QueryFilter {
@@ -736,6 +790,20 @@ impl Executor {
                         .and_then(|node_id| snapshot.get_node(&node_id))
                         .into_iter()
                         .map(QueryExecutionItem::Node),
+                ),
+            ),
+            QueryRequest::FilterNodes {
+                label,
+                filter,
+                limit,
+            } => QueryExecution::new(
+                plan.kind,
+                None,
+                filter_nodes_execution_iter(
+                    snapshot,
+                    label.as_deref(),
+                    filter,
+                    resolve_result_limit(*limit)?,
                 ),
             ),
             QueryRequest::ListNeighbors {
@@ -1088,6 +1156,32 @@ impl Iterator for LabelScanExecutionIter<'_> {
     }
 }
 
+fn filter_nodes_execution_iter<'a>(
+    snapshot: &'a dyn GraphView,
+    label: Option<&'a str>,
+    filter: &'a FilterExpression,
+    limit: usize,
+) -> Box<dyn Iterator<Item = QueryExecutionItem> + 'a> {
+    if let Some(label) = label {
+        Box::new(
+            snapshot
+                .node_ids_by_type(label)
+                .filter_map(|node_id| snapshot.get_node(&node_id))
+                .filter(move |node| node_matches_filter(node, filter))
+                .take(limit)
+                .map(QueryExecutionItem::Node),
+        )
+    } else {
+        Box::new(
+            snapshot
+                .all_nodes_iter()
+                .filter(move |node| node_matches_filter(node, filter))
+                .take(limit)
+                .map(QueryExecutionItem::Node),
+        )
+    }
+}
+
 struct TraversalExecutionIter<'a> {
     snapshot: &'a dyn GraphView,
     direction: EdgeDirection,
@@ -1198,6 +1292,145 @@ fn time_range_execution_iter<'a>(
                 .take(limit)
                 .map(QueryExecutionItem::Node),
         )
+    }
+}
+
+fn validate_filter_expression(filter: &FilterExpression) -> Result<()> {
+    match filter {
+        FilterExpression::Eq { field, .. }
+        | FilterExpression::Gt { field, .. }
+        | FilterExpression::Gte { field, .. }
+        | FilterExpression::Lt { field, .. }
+        | FilterExpression::Lte { field, .. } => {
+            if field.trim().is_empty() {
+                return Err(Undr9Error::Validation(
+                    "filter field cannot be empty".to_owned(),
+                ));
+            }
+        }
+        FilterExpression::And { conditions } | FilterExpression::Or { conditions } => {
+            if conditions.is_empty() {
+                return Err(Undr9Error::Validation(
+                    "filter conditions cannot be empty".to_owned(),
+                ));
+            }
+            for condition in conditions {
+                validate_filter_expression(condition)?;
+            }
+        }
+    }
+
+    match filter {
+        FilterExpression::Gt { value, .. }
+        | FilterExpression::Gte { value, .. }
+        | FilterExpression::Lt { value, .. }
+        | FilterExpression::Lte { value, .. } => {
+            if property_value_as_f64(value).is_none() {
+                return Err(Undr9Error::Validation(
+                    "gt/gte/lt/lte filter values must be numeric".to_owned(),
+                ));
+            }
+        }
+        _ => {}
+    }
+
+    Ok(())
+}
+
+fn filter_expression_leaf_count(filter: &FilterExpression) -> usize {
+    match filter {
+        FilterExpression::Eq { .. }
+        | FilterExpression::Gt { .. }
+        | FilterExpression::Gte { .. }
+        | FilterExpression::Lt { .. }
+        | FilterExpression::Lte { .. } => 1,
+        FilterExpression::And { conditions } | FilterExpression::Or { conditions } => {
+            conditions.iter().map(filter_expression_leaf_count).sum()
+        }
+    }
+}
+
+fn node_matches_filter(node: &NodeRecord, filter: &FilterExpression) -> bool {
+    match filter {
+        FilterExpression::Eq { field, value } => {
+            field_matches_eq(node, field, value)
+                || node
+                    .property(field)
+                    .is_some_and(|candidate| property_values_equal(candidate, value))
+        }
+        FilterExpression::Gt { field, value } => compare_property_values(
+            node.property(field).and_then(property_value_as_f64),
+            value,
+            Ordering::Greater,
+        ),
+        FilterExpression::Gte { field, value } => compare_property_values_inclusive(
+            node.property(field).and_then(property_value_as_f64),
+            value,
+            Ordering::Greater,
+        ),
+        FilterExpression::Lt { field, value } => compare_property_values(
+            node.property(field).and_then(property_value_as_f64),
+            value,
+            Ordering::Less,
+        ),
+        FilterExpression::Lte { field, value } => compare_property_values_inclusive(
+            node.property(field).and_then(property_value_as_f64),
+            value,
+            Ordering::Less,
+        ),
+        FilterExpression::And { conditions } => conditions
+            .iter()
+            .all(|condition| node_matches_filter(node, condition)),
+        FilterExpression::Or { conditions } => conditions
+            .iter()
+            .any(|condition| node_matches_filter(node, condition)),
+    }
+}
+
+fn field_matches_eq(node: &NodeRecord, field: &str, value: &PropertyValue) -> bool {
+    match field {
+        "id" => matches!(value, PropertyValue::String(expected) if node.id.as_str() == expected),
+        "label" => matches!(value, PropertyValue::String(expected) if node.node_type == *expected),
+        _ => false,
+    }
+}
+
+fn property_values_equal(left: &PropertyValue, right: &PropertyValue) -> bool {
+    match (property_value_as_f64(left), property_value_as_f64(right)) {
+        (Some(left), Some(right)) => left == right,
+        _ => left == right,
+    }
+}
+
+fn compare_property_values(left: Option<f64>, right: &PropertyValue, expected: Ordering) -> bool {
+    let Some(ordering) = compare_numeric_property_values(left, right) else {
+        return false;
+    };
+    ordering == expected
+}
+
+fn compare_property_values_inclusive(
+    left: Option<f64>,
+    right: &PropertyValue,
+    expected: Ordering,
+) -> bool {
+    let Some(ordering) = compare_numeric_property_values(left, right) else {
+        return false;
+    };
+    ordering == expected || ordering == Ordering::Equal
+}
+
+fn compare_numeric_property_values(left: Option<f64>, right: &PropertyValue) -> Option<Ordering> {
+    let left = left?;
+    let right = property_value_as_f64(right)?;
+    left.partial_cmp(&right)
+}
+
+fn property_value_as_f64(value: &PropertyValue) -> Option<f64> {
+    match value {
+        PropertyValue::Integer(value) => Some(*value as f64),
+        PropertyValue::Float(value) => Some(*value),
+        _ => None,
     }
 }
 
@@ -2096,6 +2329,178 @@ mod tests {
 
         assert_eq!(result.nodes.len(), 1);
         assert_eq!(result.nodes[0].id, node.id);
+    }
+
+    #[test]
+    fn plans_filter_nodes_query() {
+        let request = super::QueryRequest::FilterNodes {
+            label: Some("memory".to_owned()),
+            filter: super::FilterExpression::Gt {
+                field: "score".to_owned(),
+                value: PropertyValue::Integer(90),
+            },
+            limit: Some(25),
+        };
+
+        let plan = super::Planner::plan(&request).expect("plan should build");
+        assert_eq!(plan.kind, super::PlanKind::FilterScan);
+        assert!(plan.filters.iter().any(|filter| filter.field == "label"
+            && filter.value == PropertyValue::String("memory".to_owned())));
+        assert!(plan
+            .filters
+            .iter()
+            .any(|filter| filter.field == "predicate_count"
+                && filter.value == PropertyValue::Integer(1)));
+        assert!(plan
+            .filters
+            .iter()
+            .any(|filter| filter.field == "limit" && filter.value == PropertyValue::Integer(25)));
+    }
+
+    #[test]
+    fn executes_filter_nodes_with_label_and_numeric_predicates() {
+        let mut alice =
+            NodeRecord::new(NodeId::new("node_a").expect("valid node id"), "user").expect("node");
+        alice
+            .properties
+            .insert("score".to_owned(), PropertyValue::Integer(95));
+        alice.properties.insert(
+            "unique_key".to_owned(),
+            PropertyValue::String("alice".to_owned()),
+        );
+
+        let mut bob =
+            NodeRecord::new(NodeId::new("node_b").expect("valid node id"), "user").expect("node");
+        bob.properties
+            .insert("score".to_owned(), PropertyValue::Integer(80));
+        bob.properties.insert(
+            "unique_key".to_owned(),
+            PropertyValue::String("bob".to_owned()),
+        );
+
+        let mut service = NodeRecord::new(NodeId::new("node_c").expect("valid node id"), "service")
+            .expect("node");
+        service
+            .properties
+            .insert("score".to_owned(), PropertyValue::Integer(99));
+
+        let snapshot = super::GraphSnapshot {
+            nodes: vec![
+                (alice.id.clone(), alice.clone()),
+                (bob.id.clone(), bob.clone()),
+                (service.id.clone(), service.clone()),
+            ]
+            .into_iter()
+            .collect::<OrdMap<_, _>>(),
+            edges: BTreeMap::new().into_iter().collect::<OrdMap<_, _>>(),
+            indexes: GraphIndex::rebuild(&[alice.clone(), bob.clone(), service.clone()], &[]),
+        };
+
+        let result = super::Executor::execute(
+            &super::QueryRequest::FilterNodes {
+                label: Some("user".to_owned()),
+                filter: super::FilterExpression::Gt {
+                    field: "score".to_owned(),
+                    value: PropertyValue::Integer(90),
+                },
+                limit: Some(10),
+            },
+            &snapshot,
+        )
+        .expect("filter nodes should execute");
+
+        assert_eq!(result.plan_kind, super::PlanKind::FilterScan);
+        assert_eq!(result.nodes.len(), 1);
+        assert_eq!(result.nodes[0].id, alice.id);
+    }
+
+    #[test]
+    fn executes_filter_nodes_with_or_predicates() {
+        let mut alice =
+            NodeRecord::new(NodeId::new("node_a").expect("valid node id"), "user").expect("node");
+        alice
+            .properties
+            .insert("score".to_owned(), PropertyValue::Integer(50));
+        alice.properties.insert(
+            "unique_key".to_owned(),
+            PropertyValue::String("alice".to_owned()),
+        );
+
+        let mut bob =
+            NodeRecord::new(NodeId::new("node_b").expect("valid node id"), "user").expect("node");
+        bob.properties
+            .insert("score".to_owned(), PropertyValue::Integer(91));
+        bob.properties.insert(
+            "unique_key".to_owned(),
+            PropertyValue::String("bob".to_owned()),
+        );
+
+        let mut carol =
+            NodeRecord::new(NodeId::new("node_c").expect("valid node id"), "user").expect("node");
+        carol
+            .properties
+            .insert("score".to_owned(), PropertyValue::Integer(70));
+        carol.properties.insert(
+            "unique_key".to_owned(),
+            PropertyValue::String("carol".to_owned()),
+        );
+
+        let snapshot = super::GraphSnapshot {
+            nodes: vec![
+                (alice.id.clone(), alice.clone()),
+                (bob.id.clone(), bob.clone()),
+                (carol.id.clone(), carol.clone()),
+            ]
+            .into_iter()
+            .collect::<OrdMap<_, _>>(),
+            edges: BTreeMap::new().into_iter().collect::<OrdMap<_, _>>(),
+            indexes: GraphIndex::rebuild(&[alice.clone(), bob.clone(), carol.clone()], &[]),
+        };
+
+        let result = super::Executor::execute(
+            &super::QueryRequest::FilterNodes {
+                label: Some("user".to_owned()),
+                filter: super::FilterExpression::Or {
+                    conditions: vec![
+                        super::FilterExpression::Gt {
+                            field: "score".to_owned(),
+                            value: PropertyValue::Integer(90),
+                        },
+                        super::FilterExpression::Eq {
+                            field: "unique_key".to_owned(),
+                            value: PropertyValue::String("alice".to_owned()),
+                        },
+                    ],
+                },
+                limit: Some(10),
+            },
+            &snapshot,
+        )
+        .expect("filter nodes should execute");
+
+        let ids = result
+            .nodes
+            .iter()
+            .map(|node| node.id.as_str().to_owned())
+            .collect::<Vec<_>>();
+        assert_eq!(ids, vec!["node_a", "node_b"]);
+    }
+
+    #[test]
+    fn rejects_filter_nodes_with_non_numeric_range_value() {
+        let request = super::QueryRequest::FilterNodes {
+            label: Some("user".to_owned()),
+            filter: super::FilterExpression::Gt {
+                field: "score".to_owned(),
+                value: PropertyValue::String("high".to_owned()),
+            },
+            limit: Some(10),
+        };
+
+        let error = super::Planner::plan(&request).expect_err("plan should fail");
+        assert!(
+            matches!(error, undr9_common::Undr9Error::Validation(message) if message.contains("must be numeric"))
+        );
     }
 
     #[test]

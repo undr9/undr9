@@ -4,9 +4,13 @@
 
 # UNDR9
 
+Memory is becoming the new database layer for AI.
+Today's agents can reason. Tomorrow's agents must remember.
+
 UNDR9 is a graph-native memory database for AI systems that need durable storage, semantic retrieval, and operational discipline in one runtime.
 
 It combines graph relationships, vector search, temporal signals, importance, and confidence into a single database layer so memory does not have to be stitched together across multiple services.
+
 
 ## Why UNDR9
 
@@ -175,6 +179,38 @@ curl -X POST http://127.0.0.1:8080/v1/query \
   }'
 ```
 
+### Filter By Label And Properties
+
+`FilterNodes` lets you run typed database-side predicates over node properties. Use `label` for
+node type selection and the `where` clause for `eq`, `gt`, `gte`, `lt`, `lte`, `and`, and `or`.
+
+```bash
+curl -X POST http://127.0.0.1:8080/v1/query \
+  -H 'content-type: application/json' \
+  -H "x-api-key: ${UNDR9_READER_API_KEY}" \
+  -d '{
+    "FilterNodes": {
+      "label": "user",
+      "where": {
+        "op": "or",
+        "conditions": [
+          {
+            "op": "gt",
+            "field": "score",
+            "value": { "kind": "Integer", "value": 90 }
+          },
+          {
+            "op": "eq",
+            "field": "unique_key",
+            "value": { "kind": "String", "value": "alice" }
+          }
+        ]
+      },
+      "limit": 50
+    }
+  }'
+```
+
 ## Runtime Vector Behavior
 
 - HNSW is the default runtime vector backend.
@@ -240,6 +276,7 @@ Supported query families:
 
 - exact node lookup
 - unique-key lookup
+- typed property filtering
 - neighbor listing
 - bounded traversal
 - label search

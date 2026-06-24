@@ -2745,6 +2745,7 @@ fn query_request_kind(request: &QueryRequest) -> &'static str {
     match request {
         QueryRequest::GetNodeById { .. } => "get_node_by_id",
         QueryRequest::GetNodeByUniqueKey { .. } => "get_node_by_unique_key",
+        QueryRequest::FilterNodes { .. } => "filter_nodes",
         QueryRequest::ListNeighbors { .. } => "list_neighbors",
         QueryRequest::Traverse { .. } => "traverse",
         QueryRequest::ShortestPath { .. } => "shortest_path",
@@ -3164,7 +3165,7 @@ mod tests {
         EdgeRecord, IsolationLevel, NodeRecord, PropertyValue, TransactionOperation, WriteBatch,
     };
     use undr9_index::EdgeDirection;
-    use undr9_query::QueryRequest;
+    use undr9_query::{FilterExpression, QueryRequest};
     use undr9_replication::ReplicationRecord;
 
     static NEXT_TEST_ID: AtomicU64 = AtomicU64::new(1);
@@ -3817,6 +3818,426 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn filter_nodes_query_and_stream_support_multiple_examples() {
+        let state = test_state();
+        let admin_key = state.config.auth.admin_api_key.clone();
+        let app = super::build_router(state);
+
+        for payload in [
+            serde_json::json!({
+                "id": "user_alice",
+                "node_type": "user",
+                "properties": {
+                    "unique_key": {"kind":"String","value":"alice"},
+                    "score": {"kind":"Integer","value":95}
+                }
+            }),
+            serde_json::json!({
+                "id": "user_bob",
+                "node_type": "user",
+                "properties": {
+                    "unique_key": {"kind":"String","value":"bob"},
+                    "score": {"kind":"Integer","value":88}
+                }
+            }),
+            serde_json::json!({
+                "id": "service_runner",
+                "node_type": "service",
+                "properties": {
+                    "unique_key": {"kind":"String","value":"svc-runner"},
+                    "score": {"kind":"Integer","value":99}
+                }
+            }),
+        ] {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri("/v1/nodes")
+                        .header("x-api-key", &admin_key)
+                        .header(header::CONTENT_TYPE, "application/json")
+                        .body(Body::from(
+                            serde_json::to_vec(&payload).expect("json should serialize"),
+                        ))
+                        .expect("request should build"),
+                )
+                .await
+                .expect("router should respond");
+            assert_eq!(response.status(), StatusCode::OK);
+        }
+
+        let label_and_numeric_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/query")
+                    .header("x-api-key", &admin_key)
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        serde_json::to_vec(&QueryRequest::FilterNodes {
+                            label: Some("user".to_owned()),
+                            filter: FilterExpression::Gt {
+                                field: "score".to_owned(),
+                                value: PropertyValue::Integer(90),
+                            },
+                            limit: Some(10),
+                        })
+                        .expect("query should serialize"),
+                    ))
+                    .expect("request should build"),
+            )
+            .await
+            .expect("router should respond");
+        assert_eq!(label_and_numeric_response.status(), StatusCode::OK);
+        let label_and_numeric_body = to_bytes(label_and_numeric_response.into_body(), usize::MAX)
+            .await
+            .expect("body should read");
+        let label_and_numeric_json: serde_json::Value =
+            serde_json::from_slice(&label_and_numeric_body).expect("response should be json");
+        assert_eq!(label_and_numeric_json["nodes"].as_array().unwrap().len(), 1);
+        assert_eq!(label_and_numeric_json["nodes"][0]["id"], "user_alice");
+
+        let id_match_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/query")
+                    .header("x-api-key", &admin_key)
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        serde_json::to_vec(&QueryRequest::FilterNodes {
+                            label: None,
+                            filter: FilterExpression::Eq {
+                                field: "id".to_owned(),
+                                value: PropertyValue::String("user_bob".to_owned()),
+                            },
+                            limit: Some(5),
+                        })
+                        .expect("query should serialize"),
+                    ))
+                    .expect("request should build"),
+            )
+            .await
+            .expect("router should respond");
+        assert_eq!(id_match_response.status(), StatusCode::OK);
+        let id_match_body = to_bytes(id_match_response.into_body(), usize::MAX)
+            .await
+            .expect("body should read");
+        let id_match_json: serde_json::Value =
+            serde_json::from_slice(&id_match_body).expect("response should be json");
+        assert_eq!(id_match_json["nodes"].as_array().unwrap().len(), 1);
+        assert_eq!(id_match_json["nodes"][0]["id"], "user_bob");
+
+        let label_field_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/query")
+                    .header("x-api-key", &admin_key)
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        serde_json::to_vec(&QueryRequest::FilterNodes {
+                            label: None,
+                            filter: FilterExpression::Eq {
+                                field: "label".to_owned(),
+                                value: PropertyValue::String("service".to_owned()),
+                            },
+                            limit: Some(5),
+                        })
+                        .expect("query should serialize"),
+                    ))
+                    .expect("request should build"),
+            )
+            .await
+            .expect("router should respond");
+        assert_eq!(label_field_response.status(), StatusCode::OK);
+        let label_field_body = to_bytes(label_field_response.into_body(), usize::MAX)
+            .await
+            .expect("body should read");
+        let label_field_json: serde_json::Value =
+            serde_json::from_slice(&label_field_body).expect("response should be json");
+        assert_eq!(label_field_json["nodes"].as_array().unwrap().len(), 1);
+        assert_eq!(label_field_json["nodes"][0]["id"], "service_runner");
+
+        let stream_response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/query/stream")
+                    .header("x-api-key", &admin_key)
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        serde_json::to_vec(&QueryRequest::FilterNodes {
+                            label: Some("user".to_owned()),
+                            filter: FilterExpression::Or {
+                                conditions: vec![
+                                    FilterExpression::Gt {
+                                        field: "score".to_owned(),
+                                        value: PropertyValue::Integer(90),
+                                    },
+                                    FilterExpression::Eq {
+                                        field: "unique_key".to_owned(),
+                                        value: PropertyValue::String("bob".to_owned()),
+                                    },
+                                ],
+                            },
+                            limit: Some(10),
+                        })
+                        .expect("query should serialize"),
+                    ))
+                    .expect("request should build"),
+            )
+            .await
+            .expect("router should respond");
+        assert_eq!(stream_response.status(), StatusCode::OK);
+        assert_eq!(
+            stream_response.headers().get(header::CONTENT_TYPE),
+            Some(&header::HeaderValue::from_static("application/x-ndjson"))
+        );
+        let stream_body = to_bytes(stream_response.into_body(), usize::MAX)
+            .await
+            .expect("body should read");
+        let stream_payload = String::from_utf8(stream_body.to_vec()).expect("body should be UTF-8");
+        let frames = stream_payload
+            .lines()
+            .map(|line| {
+                serde_json::from_str::<serde_json::Value>(line).expect("frame should parse")
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(frames[0]["type"], "meta");
+        let streamed_ids = frames
+            .iter()
+            .filter(|frame| frame["type"] == "node")
+            .map(|frame| {
+                frame["node"]["id"]
+                    .as_str()
+                    .expect("node id should exist")
+                    .to_owned()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(streamed_ids, vec!["user_alice", "user_bob"]);
+        assert_eq!(frames.last().expect("end frame exists")["type"], "end");
+    }
+
+    #[tokio::test]
+    async fn node_and_edge_endpoints_cover_read_update_and_delete_flows() {
+        let state = test_state();
+        let admin_key = state.config.auth.admin_api_key.clone();
+        let app = super::build_router(state);
+
+        for payload in [
+            serde_json::json!({
+                "id": "crud_node_a",
+                "node_type": "memory",
+                "properties": {
+                    "value": {"kind":"Integer","value":1}
+                }
+            }),
+            serde_json::json!({
+                "id": "crud_node_b",
+                "node_type": "memory",
+                "properties": {
+                    "value": {"kind":"Integer","value":2}
+                }
+            }),
+        ] {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri("/v1/nodes")
+                        .header("x-api-key", &admin_key)
+                        .header(header::CONTENT_TYPE, "application/json")
+                        .body(Body::from(
+                            serde_json::to_vec(&payload).expect("json should serialize"),
+                        ))
+                        .expect("request should build"),
+                )
+                .await
+                .expect("router should respond");
+            assert_eq!(response.status(), StatusCode::OK);
+        }
+
+        let update_node_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri("/v1/nodes/crud_node_a")
+                    .header("x-api-key", &admin_key)
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        serde_json::to_vec(&serde_json::json!({
+                            "id": "crud_node_a",
+                            "node_type": "memory",
+                            "properties": {
+                                "value": {"kind":"Integer","value":10},
+                                "status": {"kind":"String","value":"updated"}
+                            }
+                        }))
+                        .expect("json should serialize"),
+                    ))
+                    .expect("request should build"),
+            )
+            .await
+            .expect("router should respond");
+        assert_eq!(update_node_response.status(), StatusCode::OK);
+
+        let get_node_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/nodes/crud_node_a")
+                    .header("x-api-key", &admin_key)
+                    .body(Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("router should respond");
+        assert_eq!(get_node_response.status(), StatusCode::OK);
+        let get_node_body = to_bytes(get_node_response.into_body(), usize::MAX)
+            .await
+            .expect("body should read");
+        let get_node_json: serde_json::Value =
+            serde_json::from_slice(&get_node_body).expect("response should be json");
+        assert_eq!(get_node_json["properties"]["status"]["value"], "updated");
+
+        let create_edge_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/edges")
+                    .header("x-api-key", &admin_key)
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        serde_json::to_vec(&serde_json::json!({
+                            "id": "crud_edge_ab",
+                            "source": "crud_node_a",
+                            "target": "crud_node_b",
+                            "edge_type": "relates_to",
+                            "properties": {
+                                "strength": {"kind":"Integer","value":1}
+                            }
+                        }))
+                        .expect("json should serialize"),
+                    ))
+                    .expect("request should build"),
+            )
+            .await
+            .expect("router should respond");
+        assert_eq!(create_edge_response.status(), StatusCode::OK);
+
+        let get_edge_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/edges/crud_edge_ab")
+                    .header("x-api-key", &admin_key)
+                    .body(Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("router should respond");
+        assert_eq!(get_edge_response.status(), StatusCode::OK);
+
+        let update_edge_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri("/v1/edges/crud_edge_ab")
+                    .header("x-api-key", &admin_key)
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        serde_json::to_vec(&serde_json::json!({
+                            "id": "crud_edge_ab",
+                            "source": "crud_node_a",
+                            "target": "crud_node_b",
+                            "edge_type": "relates_to",
+                            "properties": {
+                                "strength": {"kind":"Integer","value":5},
+                                "status": {"kind":"String","value":"verified"}
+                            }
+                        }))
+                        .expect("json should serialize"),
+                    ))
+                    .expect("request should build"),
+            )
+            .await
+            .expect("router should respond");
+        assert_eq!(update_edge_response.status(), StatusCode::OK);
+        let update_edge_body = to_bytes(update_edge_response.into_body(), usize::MAX)
+            .await
+            .expect("body should read");
+        let update_edge_json: serde_json::Value =
+            serde_json::from_slice(&update_edge_body).expect("response should be json");
+        assert_eq!(update_edge_json["properties"]["strength"]["value"], 5);
+        assert_eq!(
+            update_edge_json["properties"]["status"]["value"],
+            "verified"
+        );
+
+        let delete_edge_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("DELETE")
+                    .uri("/v1/edges/crud_edge_ab")
+                    .header("x-api-key", &admin_key)
+                    .body(Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("router should respond");
+        assert_eq!(delete_edge_response.status(), StatusCode::NO_CONTENT);
+
+        let get_deleted_edge_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/edges/crud_edge_ab")
+                    .header("x-api-key", &admin_key)
+                    .body(Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("router should respond");
+        assert_eq!(get_deleted_edge_response.status(), StatusCode::NOT_FOUND);
+
+        let delete_node_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("DELETE")
+                    .uri("/v1/nodes/crud_node_b")
+                    .header("x-api-key", &admin_key)
+                    .body(Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("router should respond");
+        assert_eq!(delete_node_response.status(), StatusCode::NO_CONTENT);
+
+        let get_deleted_node_response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/nodes/crud_node_b")
+                    .header("x-api-key", &admin_key)
+                    .body(Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("router should respond");
+        assert_eq!(get_deleted_node_response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
     async fn rejects_path_id_body_id_mismatch() {
         let state = test_state();
         let admin_key = state.config.auth.admin_api_key.clone();
@@ -4313,6 +4734,178 @@ mod tests {
             .as_array()
             .expect("nodes should be an array")
             .is_empty());
+    }
+
+    #[tokio::test]
+    async fn transaction_listing_summary_stream_and_rollback_endpoints_work() {
+        let state = test_state();
+        let admin_key = state.config.auth.admin_api_key.clone();
+        let app = super::build_router(state);
+
+        let begin_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/transactions/begin")
+                    .header("x-api-key", &admin_key)
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        serde_json::to_vec(&serde_json::json!({
+                            "isolation_level": "Snapshot"
+                        }))
+                        .expect("json should serialize"),
+                    ))
+                    .expect("request should build"),
+            )
+            .await
+            .expect("router should respond");
+        assert_eq!(begin_response.status(), StatusCode::OK);
+        let begin_body = to_bytes(begin_response.into_body(), usize::MAX)
+            .await
+            .expect("body should read");
+        let begin_json: serde_json::Value =
+            serde_json::from_slice(&begin_body).expect("response should be json");
+        let transaction_id = begin_json["transaction_id"]
+            .as_str()
+            .expect("transaction id should exist")
+            .to_owned();
+
+        let list_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/transactions")
+                    .header("x-api-key", &admin_key)
+                    .body(Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("router should respond");
+        assert_eq!(list_response.status(), StatusCode::OK);
+        let list_body = to_bytes(list_response.into_body(), usize::MAX)
+            .await
+            .expect("body should read");
+        let list_json: serde_json::Value =
+            serde_json::from_slice(&list_body).expect("response should be json");
+        assert_eq!(list_json.as_array().unwrap().len(), 1);
+        assert_eq!(list_json[0]["transaction_id"], transaction_id);
+
+        let summary_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/v1/transactions/{transaction_id}"))
+                    .header("x-api-key", &admin_key)
+                    .body(Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("router should respond");
+        assert_eq!(summary_response.status(), StatusCode::OK);
+        let summary_body = to_bytes(summary_response.into_body(), usize::MAX)
+            .await
+            .expect("body should read");
+        let summary_json: serde_json::Value =
+            serde_json::from_slice(&summary_body).expect("response should be json");
+        assert_eq!(summary_json["transaction_id"], transaction_id);
+        assert_eq!(summary_json["state"], "Active");
+
+        let staged_node = NodeRecord::new(
+            NodeId::new("tx_stream_node").expect("valid node id"),
+            "memory",
+        )
+        .expect("node should build")
+        .with_property("unique_key", PropertyValue::String("tx-stream".to_owned()))
+        .expect("property should build");
+        let stage_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/v1/transactions/{transaction_id}/operations"))
+                    .header("x-api-key", &admin_key)
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        serde_json::to_vec(&TransactionOperation::UpsertNode(staged_node.clone()))
+                            .expect("operation should serialize"),
+                    ))
+                    .expect("request should build"),
+            )
+            .await
+            .expect("router should respond");
+        assert_eq!(stage_response.status(), StatusCode::OK);
+
+        let stream_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/v1/transactions/{transaction_id}/query/stream"))
+                    .header("x-api-key", &admin_key)
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        serde_json::to_vec(&QueryRequest::GetNodeById {
+                            node_id: staged_node.id.clone(),
+                        })
+                        .expect("query should serialize"),
+                    ))
+                    .expect("request should build"),
+            )
+            .await
+            .expect("router should respond");
+        assert_eq!(stream_response.status(), StatusCode::OK);
+        assert_eq!(
+            stream_response.headers().get(header::CONTENT_TYPE),
+            Some(&header::HeaderValue::from_static("application/x-ndjson"))
+        );
+        let stream_body = to_bytes(stream_response.into_body(), usize::MAX)
+            .await
+            .expect("body should read");
+        let stream_payload = String::from_utf8(stream_body.to_vec()).expect("body should be UTF-8");
+        assert!(stream_payload.contains("\"type\":\"meta\""));
+        assert!(stream_payload.contains("\"type\":\"node\""));
+        assert!(stream_payload.contains("\"id\":\"tx_stream_node\""));
+        assert!(stream_payload.contains("\"type\":\"end\""));
+
+        let rollback_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/v1/transactions/{transaction_id}/rollback"))
+                    .header("x-api-key", &admin_key)
+                    .body(Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("router should respond");
+        assert_eq!(rollback_response.status(), StatusCode::OK);
+        let rollback_body = to_bytes(rollback_response.into_body(), usize::MAX)
+            .await
+            .expect("body should read");
+        let rollback_json: serde_json::Value =
+            serde_json::from_slice(&rollback_body).expect("response should be json");
+        assert_eq!(rollback_json["transaction_id"], transaction_id);
+        assert_eq!(rollback_json["state"], "RolledBack");
+
+        let post_rollback_list_response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/transactions")
+                    .header("x-api-key", &admin_key)
+                    .body(Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("router should respond");
+        assert_eq!(post_rollback_list_response.status(), StatusCode::OK);
+        let post_rollback_list_body = to_bytes(post_rollback_list_response.into_body(), usize::MAX)
+            .await
+            .expect("body should read");
+        let post_rollback_list_json: serde_json::Value =
+            serde_json::from_slice(&post_rollback_list_body).expect("response should be json");
+        assert!(post_rollback_list_json.as_array().unwrap().is_empty());
     }
 
     #[test]
@@ -5155,5 +5748,119 @@ mod tests {
             serde_json::from_slice(&status_body).expect("response should be json");
         assert_eq!(status_json["status"]["mode"], "Follower");
         assert_eq!(status_json["status"]["leader_node_id"], "replica-2");
+    }
+
+    #[tokio::test]
+    async fn repair_and_cluster_health_endpoints_report_updated_state() {
+        let state = test_state_with_identity("leader-health");
+        let admin_key = state.config.auth.admin_api_key.clone();
+        let app = super::build_router(state);
+
+        let configure_leader = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/admin/replication/leader")
+                    .header("x-api-key", &admin_key)
+                    .body(Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("router should respond");
+        assert_eq!(configure_leader.status(), StatusCode::OK);
+
+        let register_replica = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/admin/cluster/nodes")
+                    .header("x-api-key", &admin_key)
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        serde_json::to_vec(&serde_json::json!({
+                            "node_id": "replica-health",
+                            "address": "127.0.0.1:9301"
+                        }))
+                        .expect("json should serialize"),
+                    ))
+                    .expect("request should build"),
+            )
+            .await
+            .expect("router should respond");
+        assert_eq!(register_replica.status(), StatusCode::OK);
+
+        let mark_unhealthy_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/admin/cluster/nodes/replica-health/health")
+                    .header("x-api-key", &admin_key)
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        serde_json::to_vec(&serde_json::json!({
+                            "healthy": false
+                        }))
+                        .expect("json should serialize"),
+                    ))
+                    .expect("request should build"),
+            )
+            .await
+            .expect("router should respond");
+        assert_eq!(mark_unhealthy_response.status(), StatusCode::OK);
+        let mark_unhealthy_body = to_bytes(mark_unhealthy_response.into_body(), usize::MAX)
+            .await
+            .expect("body should read");
+        let mark_unhealthy_json: serde_json::Value =
+            serde_json::from_slice(&mark_unhealthy_body).expect("response should be json");
+        let unhealthy_replica = mark_unhealthy_json["nodes"]
+            .as_array()
+            .expect("nodes should be array")
+            .iter()
+            .find(|node| node["node_id"] == "replica-health")
+            .expect("replica should exist");
+        assert_eq!(unhealthy_replica["healthy"], false);
+
+        let repair_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/admin/repair")
+                    .header("x-api-key", &admin_key)
+                    .body(Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("router should respond");
+        assert_eq!(repair_response.status(), StatusCode::OK);
+        let repair_body = to_bytes(repair_response.into_body(), usize::MAX)
+            .await
+            .expect("body should read");
+        let repair_json: serde_json::Value =
+            serde_json::from_slice(&repair_body).expect("response should be json");
+        assert_eq!(repair_json["manifest_present"], true);
+        assert_eq!(repair_json["issues"].as_array().unwrap().len(), 0);
+
+        let status_response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/admin/maintenance/status")
+                    .header("x-api-key", &admin_key)
+                    .body(Body::empty())
+                    .expect("request should build"),
+            )
+            .await
+            .expect("router should respond");
+        assert_eq!(status_response.status(), StatusCode::OK);
+        let status_body = to_bytes(status_response.into_body(), usize::MAX)
+            .await
+            .expect("body should read");
+        let status_json: serde_json::Value =
+            serde_json::from_slice(&status_body).expect("response should be json");
+        assert_eq!(status_json["last_operation"], "repair");
+        assert_eq!(status_json["last_outcome"], "success");
     }
 }
