@@ -147,6 +147,32 @@ curl -X POST http://127.0.0.1:8080/v1/nodes \
   }'
 ```
 
+## Namespace Concept
+
+UNDR9 does not require every node ID to include a namespace. A plain ID such as `node_a` is valid,
+and a namespaced ID such as `tenant_a:node_1` is also valid.
+
+In practice, a namespace is a logical prefix embedded in the node ID before the first `:`:
+
+- `node_a` -> no namespace
+- `tenant_a:node_1` -> namespace `tenant_a`
+- `customer_42:invoice_9` -> namespace `customer_42`
+
+This is a convention for logical partitioning rather than a separate required schema field. It is
+useful when you want to group nodes by tenant, workspace, customer, or application domain while
+still using one physical UNDR9 instance.
+
+Important behavior:
+
+- Node IDs do not need a namespace prefix.
+- If you use namespaces, use them consistently across connected data.
+- Edges cannot cross namespaces. An edge between `tenant_a:x` and `tenant_b:y` is rejected.
+- Edges between two plain IDs such as `node_a` and `node_b` are valid.
+
+If you are building multi-tenant or workspace-scoped data, namespace prefixes are the recommended
+way to separate logical graph domains. If you are running a single shared graph, plain IDs are
+fine.
+
 ### Query By Vector
 
 `limit` controls the number of final results returned. `top_k` optionally overrides the semantic candidate pool for the request when HNSW is active. `vector_name` selects the named vector space and defaults to `default`.
@@ -420,6 +446,7 @@ The `undr9-cli` package contains two binaries, so use `--bin undr9-cli` for the 
 - [Contributing Guide](./CONTRIBUTING.md)
 - [HTTP API](./docs/api/http.md)
 - [One-Node Operations Guide](./docs/operations/one-node.md)
+- [Engineering Blog: Typed JSON Variant Queries](./docs/blog/why-we-abandoned-string-parsed-queries.md)
 - [Docker Deployment](./deployments/docker/README.md)
 
 ## Status
